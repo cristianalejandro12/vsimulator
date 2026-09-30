@@ -168,7 +168,7 @@ function stallSpots(): Stall[] {
 }
 
 type Courier = {
-  mode: 'seek' | 'wait'
+  mode: 'wait' | 'seek' | 'haul'
   until: number
   path: Path
   d: number
@@ -176,27 +176,31 @@ type Courier = {
   z: number
   heading: number
   park: Stall
+  speed: number
 }
 
 function makeCouriers(): Courier[] {
   const spots = stallSpots()
-  const count = Math.random() < 0.45 ? 1 : 2
+  const count = 5 + Math.floor(Math.random() * 2)
   const now = performance.now()
+  const modes: Array<Courier['mode']> = ['wait', 'seek', 'haul', 'seek', 'wait', 'haul']
   return Array.from({ length: count }, (_, index) => {
     const path = loopAt((index * 3 + 1) % GRID, (index * 2 + 2) % GRID)
-    const distance = 24 + index * 48
+    const distance = 18 + index * 31
     const pose = samplePath(path, distance)
     const park = spots[index % spots.length]
-    const waiting = index === 1
+    const mode = modes[index % modes.length]
+    const waiting = mode === 'wait'
     return {
-      mode: waiting ? 'wait' : 'seek',
-      until: now + (waiting ? 16000 + Math.random() * 12000 : 20000 + Math.random() * 14000),
+      mode,
+      until: now + (waiting ? 10000 + Math.random() * 14000 : 14000 + Math.random() * 18000),
       path,
       d: distance,
       x: waiting ? park.x : pose.x,
       z: waiting ? park.z : pose.z,
       heading: waiting ? park.heading : pose.heading,
       park,
+      speed: mode === 'haul' ? 12.4 : 11.2,
     }
   })
 }
@@ -274,20 +278,33 @@ export function Traffic() {
     const stalls = stallSpots()
     for (const courier of couriers) {
       if (now >= courier.until) {
-        if (courier.mode === 'seek') {
+        if (courier.mode === 'wait') {
+          courier.path = loopAt(Math.floor(Math.random() * GRID), Math.floor(Math.random() * GRID))
+          courier.d = closestDistance(courier.path, courier.x, courier.z)
+          courier.mode = Math.random() < 0.55 ? 'haul' : 'seek'
+          courier.speed = courier.mode === 'haul' ? 12.6 : 11.1
+          courier.until = now + 16000 + Math.random() * 18000
+        } else if (courier.mode === 'seek') {
           const next = stalls[Math.floor(Math.random() * stalls.length)]
           courier.park = next
           courier.mode = 'wait'
-          courier.until = now + 12000 + Math.random() * 16000
+          courier.until = now + 9000 + Math.random() * 14000
         } else {
-          courier.path = loopAt(Math.floor(Math.random() * GRID), Math.floor(Math.random() * GRID))
-          courier.d = closestDistance(courier.path, courier.x, courier.z)
-          courier.mode = 'seek'
-          courier.until = now + 18000 + Math.random() * 16000
+          const next = stalls[Math.floor(Math.random() * stalls.length)]
+          courier.park = next
+          courier.mode = Math.random() < 0.4 ? 'wait' : 'seek'
+          if (courier.mode === 'seek') {
+            courier.path = loopAt(Math.floor(Math.random() * GRID), Math.floor(Math.random() * GRID))
+            courier.d = closestDistance(courier.path, courier.x, courier.z)
+            courier.speed = 11.1
+            courier.until = now + 14000 + Math.random() * 16000
+          } else {
+            courier.until = now + 10000 + Math.random() * 12000
+          }
         }
       }
-      if (courier.mode === 'seek') {
-        courier.d += 11.5 * step
+      if (courier.mode === 'seek' || courier.mode === 'haul') {
+        courier.d += courier.speed * step
         const pose = samplePath(courier.path, courier.d)
         courier.x = THREE.MathUtils.damp(courier.x, pose.x, 2.4, step)
         courier.z = THREE.MathUtils.damp(courier.z, pose.z, 2.4, step)

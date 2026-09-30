@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, extend, useFrame, type ThreeElement } from '@react-three/fiber'
 import { Effects, useTexture } from '@react-three/drei'
 import { UnrealBloomPass } from 'three-stdlib'
@@ -60,12 +60,85 @@ function SkyDome() {
   )
 }
 
+function Clouds() {
+  const group = useRef<THREE.Group>(null)
+  const mats = useRef<THREE.MeshBasicMaterial[]>([])
+  const clouds = useMemo(
+    () =>
+      Array.from({ length: 14 }, (_, index) => {
+        const angle = (index / 14) * Math.PI * 2 + index * 0.35
+        const radius = 90 + (index % 5) * 38
+        return {
+          x: Math.cos(angle) * radius,
+          y: 48 + (index % 4) * 9,
+          z: Math.sin(angle) * radius,
+          sx: 28 + (index % 5) * 7,
+          sy: 8 + (index % 3) * 2.5,
+          sz: 16 + (index % 4) * 5,
+          drift: 2.2 + (index % 4) * 0.7,
+          spin: 0.02 + (index % 3) * 0.01,
+        }
+      }),
+    [],
+  )
+  useFrame((_, dt) => {
+    const look = blendedLook(game.clock)
+    const tint = look.label === 'Noche' ? '#8fa3c8' : look.label === 'Atardecer' ? '#ffe0c0' : '#ffffff'
+    const opacity = look.label === 'Noche' ? 0.28 : look.label === 'Atardecer' ? 0.42 : 0.55
+    mats.current.forEach((mat) => {
+      if (!mat) return
+      mat.color.set(tint)
+      mat.opacity = opacity
+    })
+    const root = group.current
+    if (!root) return
+    root.position.x = game.x
+    root.position.z = game.z
+    root.children.forEach((child, index) => {
+      const cloud = clouds[index]
+      if (!cloud || !(child instanceof THREE.Group)) return
+      child.position.x += cloud.drift * dt * 0.35
+      if (child.position.x > 220) child.position.x = -220
+      child.rotation.y += cloud.spin * dt
+    })
+  })
+  return (
+    <group ref={group}>
+      {clouds.map((cloud, index) => (
+        <group key={index} position={[cloud.x, cloud.y, cloud.z]}>
+          {[
+            [0, 0, 0, 1],
+            [0.45, 0.08, 0.1, 0.72],
+            [-0.4, 0.05, -0.15, 0.68],
+            [0.1, 0.18, -0.35, 0.55],
+          ].map(([ox, oy, oz, scale], puff) => (
+            <mesh key={puff} position={[ox * cloud.sx, oy * cloud.sy, oz * cloud.sz]} scale={[scale, scale * 0.7, scale]}>
+              <sphereGeometry args={[cloud.sx * 0.42, 12, 10]} />
+              <meshBasicMaterial
+                ref={(node) => {
+                  if (node) mats.current[index * 4 + puff] = node
+                }}
+                color="#ffffff"
+                transparent
+                opacity={0.5}
+                depthWrite={false}
+                fog={false}
+              />
+            </mesh>
+          ))}
+        </group>
+      ))}
+    </group>
+  )
+}
+
 function World({ onReady }: { onReady: () => void }) {
   return (
     <>
       <color attach="background" args={['#2ea8f0']} />
       <fog attach="fog" args={['#5ec4f8', 240, 780]} />
       <SkyDome />
+      <Clouds />
       <CityWorld />
       <Suspense fallback={null}>
         <Player />

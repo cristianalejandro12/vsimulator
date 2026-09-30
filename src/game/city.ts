@@ -842,24 +842,36 @@ function addFrontWindows(city: City, x: number, z: number, w: number, d: number,
   }
 }
 
-function addTower(city: City, ix: number, iz: number) {
+function addTower(
+  city: City,
+  ix: number,
+  iz: number,
+  floors = 5,
+  wall = '#f4efe6',
+  roof = '#6b5344',
+) {
   const { x, z } = blockCenter(ix, iz)
-  const w = 11
-  const d = 9
-  const floors = 5
-  const h = 2.6 * floors
-  pushBox(city.walls, x, h / 2, z, w, h, d, 0, '#f4efe6')
+  const w = 9 + (floors > 7 ? 3 : floors > 5 ? 2 : 0)
+  const d = 8 + (floors > 7 ? 2 : 0)
+  const h = 2.55 * floors
+  pushBox(city.walls, x, h / 2, z, w, h, d, 0, wall)
   pushBox(city.walls, x, 0.35, z, w + 0.25, 0.5, d + 0.25, 0, '#c4523a')
-  pushBox(city.roofs, x, h + 0.16, z, w + 0.4, 0.24, d + 0.4, 0, '#6b5344')
-  pushBox(city.tanks, x + 2.2, h + 0.7, z - 1.4, 0.85, 0.75, 0.85, 0, '#e7eef3')
+  pushBox(city.roofs, x, h + 0.16, z, w + 0.5, 0.28, d + 0.5, 0, roof)
+  if (floors >= 8) {
+    pushBox(city.walls, x, h + 2.4, z, w * 0.55, 4.6, d * 0.55, 0, shade(wall, 0.92))
+    pushBox(city.roofs, x, h + 4.85, z, w * 0.58, 0.22, d * 0.58, 0, roof)
+    pushBox(city.extras, x, h + 6.2, z, 0.35, 2.4, 0.35, 0, '#d52b1e')
+  } else {
+    pushBox(city.tanks, x + 2.2, h + 0.7, z - 1.4, 0.85, 0.75, 0.85, 0, '#e7eef3')
+  }
   city.colliders.push(makeAxes(0, w, d, x, z))
   for (let floor = 0; floor < floors; floor++) {
-    const y = 1.45 + floor * 2.6
+    const y = 1.45 + floor * 2.55
     for (const side of [-1, 1]) {
       for (const col of [-1, 0, 1]) {
         const wz = z + side * (d / 2 + 0.04)
-        pushBox(city.windows, x + col * 3, y, wz, 1.15, 1.15, 0.06, 0, '#9fd4ee')
-        pushBox(city.extras, x + col * 3, y - 0.8, z + side * (d / 2 + 0.28), 1.6, 0.08, 0.45, 0, '#d9d3c8')
+        pushBox(city.windows, x + col * (w / 4), y, wz, 1.15, 1.15, 0.06, 0, floor > 2 ? '#9fd4ee' : '#1c4d6e')
+        pushBox(city.extras, x + col * (w / 4), y - 0.8, z + side * (d / 2 + 0.28), 1.6, 0.08, 0.45, 0, '#d9d3c8')
       }
     }
   }
@@ -938,14 +950,20 @@ function addChile(city: City) {
   addSign(city, plaza.x, 2.4, plaza.z - 7.2, 'Plaza', '#3d6ea8', '#ffffff')
 
   for (const spot of [
-    [5, 5],
-    [7, 2],
-    [4, 7],
-    [1, 5],
-    [3, 6],
-    [0, 7],
+    [5, 5, 6, '#f4efe6', '#6b5344'],
+    [7, 2, 9, '#e8eef5', '#4a5d73'],
+    [4, 7, 5, '#f4efe6', '#6b5344'],
+    [1, 5, 11, '#dfe7f2', '#3d4f66'],
+    [3, 6, 7, '#f1ebe3', '#8d4e3c'],
+    [0, 7, 8, '#f7f4ee', '#5a6e86'],
+    [0, 0, 10, '#ebe4da', '#4e5f74'],
+    [2, 0, 6, '#f4efe6', '#6b5344'],
+    [3, 5, 12, '#d8e2ef', '#2f4058'],
+    [6, 7, 7, '#f0ebe4', '#7a5340'],
+    [1, 0, 5, '#f7f4ee', '#6b5344'],
+    [5, 6, 8, '#e6edf6', '#45586f'],
   ] as const) {
-    addTower(city, spot[0], spot[1])
+    addTower(city, spot[0], spot[1], spot[2], spot[3], spot[4])
   }
 }
 
@@ -981,6 +999,14 @@ function addProps(city: City) {
     ['panel', 6, 4],
     ['pizza', 2, 3],
     ['pizza', 4, 1],
+    ['horizon', 3, 1],
+    ['horizon', 4, 5],
+    ['horizon', 6, 6],
+    ['panel', 0, 1],
+    ['panel', 2, 7],
+    ['panel', 5, 2],
+    ['pizza', 7, 4],
+    ['pizza', 1, 3],
   ]
   spots.forEach(([kind, ix, iz], index) => {
     const center = blockCenter(ix, iz)

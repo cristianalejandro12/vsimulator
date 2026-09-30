@@ -211,7 +211,7 @@ export function HUD() {
         <div className="menu">
           <div className="menu-card">
             <p className="eyebrow">Turno de reparto</p>
-            <h1>Venezuela Simulator</h1>
+            <h1>V simulator</h1>
             <ul>
               <li><kbd>W</kbd> acelera · <kbd>S</kbd> frena</li>
               <li><kbd>A</kbd> y <kbd>D</kbd> giran la moto</li>
@@ -489,7 +489,7 @@ export function Loader() {
   return (
     <div className="loader">
       <div>
-        <p className="eyebrow">Venezuela Simulator</p>
+        <p className="eyebrow">V simulator</p>
         <h1>Preparando la ciudad</h1>
         <div className="bar">
           <div style={{ width: `${Math.round(progress)}%` }} />
