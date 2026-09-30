@@ -8,7 +8,7 @@ body {
 button, kbd { font-family: inherit; }
 
 .hud { position: fixed; inset: 0; pointer-events: none; }
-.hud button, .menu { pointer-events: auto; }
+.hud button, .menu, .offer:not(.ticket) { pointer-events: auto; }
 
 .stroke, .cash strong, .speedo span, .prompt, .floater, .menu-card h1, .menu-card button, .loader h1, .banner, .wanted {
   text-shadow:
@@ -141,7 +141,7 @@ button, kbd { font-family: inherit; }
   border-radius: 50%; background: #4c7832; border: 4px solid #fff; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
 }
 .offer {
-  position: absolute; left: 14px; bottom: 300px; z-index: 6;
+  position: absolute; left: 14px; bottom: 300px; z-index: 40;
   width: 280px;
   padding: 10px 12px 8px;
   border-radius: 20px;

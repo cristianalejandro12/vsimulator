@@ -71,6 +71,20 @@ function blockLoop(i: number, j: number) {
   return { points, cum, length: cum[cum.length - 1] }
 }
 
+function closestDistance(path: Path, x: number, z: number) {
+  let best = 0
+  let bestDist = Infinity
+  for (let index = 0; index < path.points.length; index++) {
+    const point = path.points[index]
+    const dist = Math.hypot(point.x - x, point.z - z)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = path.cum[index]
+    }
+  }
+  return best
+}
+
 function samplePath(path: Path, distance: number): Pose {
   const count = path.points.length
   let cursor = distance % path.length
@@ -112,7 +126,7 @@ type SimCar = {
   heading: number
 }
 
-const FLEET_MODELS: VehicleKey[] = ['sedan', 'taxi', 'red', 'rappi', 'sedan', 'taxi', 'rappi', 'red']
+const FLEET_MODELS: VehicleKey[] = ['sedan', 'taxi', 'red', 'sedan', 'taxi', 'red', 'sedan', 'taxi']
 
 const FLEET: Array<{ i: number; j: number; model: VehicleKey; d: number; speed: number }> = []
 for (let j = 0; j < GRID; j++) {
@@ -134,7 +148,62 @@ FLEET.push(
   { i: 6, j: 4, model: 'bus', d: 80, speed: 7.5 },
 )
 
+type Stall = { x: number; z: number; heading: number }
+
+function stallSpots(): Stall[] {
+  const spots: Stall[] = city.restaurants.map((restaurant) => ({
+    x: restaurant.pickup.x + 2.6,
+    z: restaurant.pickup.z + 1.8,
+    heading: restaurant.yaw + Math.PI,
+  }))
+  for (const prop of city.props) {
+    if (prop.kind !== 'pizza') continue
+    spots.push({
+      x: prop.x + Math.sin(prop.yaw) * 9,
+      z: prop.z + Math.cos(prop.yaw) * 9,
+      heading: prop.yaw,
+    })
+  }
+  return spots.length ? spots : [{ x: city.spawn.x, z: city.spawn.z + 6, heading: 0 }]
+}
+
+type Courier = {
+  mode: 'seek' | 'wait'
+  until: number
+  path: Path
+  d: number
+  x: number
+  z: number
+  heading: number
+  park: Stall
+}
+
+function makeCouriers(): Courier[] {
+  const spots = stallSpots()
+  const count = Math.random() < 0.45 ? 1 : 2
+  const now = performance.now()
+  return Array.from({ length: count }, (_, index) => {
+    const path = loopAt((index * 3 + 1) % GRID, (index * 2 + 2) % GRID)
+    const distance = 24 + index * 48
+    const pose = samplePath(path, distance)
+    const park = spots[index % spots.length]
+    const waiting = index === 1
+    return {
+      mode: waiting ? 'wait' : 'seek',
+      until: now + (waiting ? 16000 + Math.random() * 12000 : 20000 + Math.random() * 14000),
+      path,
+      d: distance,
+      x: waiting ? park.x : pose.x,
+      z: waiting ? park.z : pose.z,
+      heading: waiting ? park.heading : pose.heading,
+      park,
+    }
+  })
+}
+
 export function Traffic() {
+  const couriers = useMemo(() => makeCouriers(), [])
+  const courierRefs = useRef<Array<THREE.Group | null>>([])
   const sim = useMemo<SimCar[]>(() => {
     return FLEET.map((item) => {
       const path = loopAt(item.i, item.j)
@@ -201,12 +270,49 @@ export function Traffic() {
       car.heading += turn * Math.min(1, step * 24)
       moverColliders.push(makeAxes(car.heading, car.length * 0.92, car.width, car.x, car.z))
     }
+    const now = performance.now()
+    const stalls = stallSpots()
+    for (const courier of couriers) {
+      if (now >= courier.until) {
+        if (courier.mode === 'seek') {
+          const next = stalls[Math.floor(Math.random() * stalls.length)]
+          courier.park = next
+          courier.mode = 'wait'
+          courier.until = now + 12000 + Math.random() * 16000
+        } else {
+          courier.path = loopAt(Math.floor(Math.random() * GRID), Math.floor(Math.random() * GRID))
+          courier.d = closestDistance(courier.path, courier.x, courier.z)
+          courier.mode = 'seek'
+          courier.until = now + 18000 + Math.random() * 16000
+        }
+      }
+      if (courier.mode === 'seek') {
+        courier.d += 11.5 * step
+        const pose = samplePath(courier.path, courier.d)
+        courier.x = THREE.MathUtils.damp(courier.x, pose.x, 2.4, step)
+        courier.z = THREE.MathUtils.damp(courier.z, pose.z, 2.4, step)
+        const turn = Math.atan2(Math.sin(pose.heading - courier.heading), Math.cos(pose.heading - courier.heading))
+        courier.heading += turn * Math.min(1, step * 8)
+      } else {
+        courier.x = THREE.MathUtils.damp(courier.x, courier.park.x, 3.2, step)
+        courier.z = THREE.MathUtils.damp(courier.z, courier.park.z, 3.2, step)
+        const turn = Math.atan2(Math.sin(courier.park.heading - courier.heading), Math.cos(courier.park.heading - courier.heading))
+        courier.heading += turn * Math.min(1, step * 4)
+      }
+      moverColliders.push(makeAxes(courier.heading, FILES.rappi.length * 0.92, FILES.rappi.width, courier.x, courier.z))
+    }
     sim.forEach((car, index) => {
       const group = refs.current[index]
       if (!group) return
       const spec = FILES[car.model]
       group.position.set(car.x, spec.y, car.z)
       group.rotation.y = spec.nose - car.heading
+    })
+    couriers.forEach((courier, index) => {
+      const group = courierRefs.current[index]
+      if (!group) return
+      group.position.set(courier.x, FILES.rappi.y, courier.z)
+      group.rotation.y = FILES.rappi.nose - courier.heading
     })
   })
 
@@ -215,6 +321,11 @@ export function Traffic() {
       {sim.map((car, index) => (
         <group key={`${car.model}-${index}`} ref={(node) => { refs.current[index] = node }}>
           <VehicleModel url={FILES[car.model].url} length={FILES[car.model].length} yaw={FILES[car.model].yaw} />
+        </group>
+      ))}
+      {couriers.map((courier, index) => (
+        <group key={`rappi-${index}`} ref={(node) => { courierRefs.current[index] = node }}>
+          <VehicleModel url={FILES.rappi.url} length={FILES.rappi.length} yaw={FILES.rappi.yaw} />
         </group>
       ))}
       {city.parked.map((car, index) => (

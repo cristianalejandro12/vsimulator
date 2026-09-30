@@ -32,10 +32,14 @@ function Ready({ onReady }: { onReady: () => void }) {
 }
 
 function SkyDome() {
-  const texture = useTexture('/sky.jpg')
+  const texture = useTexture('/cieloreal2.webp')
   texture.colorSpace = THREE.SRGBColorSpace
   texture.wrapS = THREE.ClampToEdgeWrapping
   texture.wrapT = THREE.ClampToEdgeWrapping
+  texture.anisotropy = 16
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.generateMipmaps = true
   const sky = useRef<THREE.MeshBasicMaterial>(null)
   useFrame(({ scene }) => {
     const look = blendedLook(game.clock)
@@ -49,8 +53,8 @@ function SkyDome() {
     if (scene.background instanceof THREE.Color) scene.background.set(look.bg)
   })
   return (
-    <mesh frustumCulled={false} renderOrder={-1}>
-      <sphereGeometry args={[900, 48, 32]} />
+    <mesh frustumCulled={false} renderOrder={-1} rotation={[0, Math.PI * 0.15, 0]}>
+      <sphereGeometry args={[980, 96, 48]} />
       <meshBasicMaterial ref={sky} map={texture} side={THREE.BackSide} fog={false} toneMapped={false} depthWrite={false} />
     </mesh>
   )
@@ -76,7 +80,7 @@ function World({ onReady }: { onReady: () => void }) {
       ))}
       <Markers />
       <Effects disableGamma multisamping={0}>
-        <unrealBloomPass args={[BLOOM_RES, 0.16, 0.4, 0.84]} />
+        <unrealBloomPass args={[BLOOM_RES, 0.30, 0.42, 0.82]} />
       </Effects>
       <Suspense fallback={null}>
         <Phones />
@@ -96,7 +100,7 @@ export default function App() {
         gl={{
           antialias: true,
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.05,
+          toneMappingExposure: 1.12,
           powerPreference: 'high-performance',
         }}
       >

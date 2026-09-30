@@ -20,10 +20,14 @@ export function HUD() {
         if (!game.started) bootAudioAndShift()
         else if (game.offer) acceptOffer()
       }
-      if (event.code === 'Escape' && game.offer) rejectOffer()
+      if ((event.code === 'Escape' || event.key === 'Escape') && game.offer) {
+        event.preventDefault()
+        event.stopPropagation()
+        rejectOffer()
+      }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [])
 
   useEffect(() => {
@@ -145,7 +149,17 @@ export function HUD() {
             {game.carrying ? 'Termina este pedido' : 'Aceptar'}
             {!game.carrying && <small>Enter</small>}
           </button>
-          <button type="button" className="offer-reject" onClick={rejectOffer}>Rechazar <small>Esc</small></button>
+          <button
+            type="button"
+            className="offer-reject"
+            onPointerDown={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              rejectOffer()
+            }}
+          >
+            Rechazar <small>Esc</small>
+          </button>
         </div>
       )}
 
