@@ -11,6 +11,14 @@ export type Notice = {
   title: string
   text: string
   tone: 'alert' | 'ok' | 'pop' | 'cash' | 'fire'
+  brand?: BrandId
+}
+
+export const BRAND_LOGO: Record<BrandId, string> = {
+  mcdonalds: '/brands/mcdonalds.png',
+  kfc: '/brands/kfc.png',
+  burgerking: '/brands/burgerking.png',
+  pizzahut: '/brands/pizzahut.svg',
 }
 
 export type Shakedown = {
@@ -45,7 +53,7 @@ export type Pursuit = {
 
 export type SideQuest = {
   id: number
-  kind: 'phones' | 'tips' | 'drops'
+  kind: 'phones' | 'tips' | 'drops' | 'cans'
   emoji: string
   title: string
   hint: string
@@ -72,6 +80,10 @@ export type Mission = {
   premium: boolean
   deadline: number | null
   contested: boolean
+  rivalKind: 'rappi' | 'taxi'
+  kitchen: boolean
+  holdUntil: number | null
+  cancelAt: number | null
 }
 
 const BRANDS: Array<{ id: BrandId; name: string; color: string; items: Array<{ name: string; price: number }> }> = [
@@ -131,6 +143,7 @@ export const game = {
   speed: 0,
   distance: 0,
   money: 0,
+  cans: 0,
   started: false,
   muted: false,
   carrying: false,
@@ -149,7 +162,7 @@ export const game = {
   shakedown: null as Shakedown | null,
   burned: [] as string[],
   burnFx: null as { id: string; until: number } | null,
-  rival: null as { x: number; z: number; toShop: number; toYou: number; dropping: boolean; kph: number } | null,
+  rival: null as { x: number; z: number; toShop: number; toYou: number; dropping: boolean; kph: number; kind: 'rappi' | 'taxi' } | null,
   sideQuest: null as SideQuest | null,
 }
 
@@ -164,7 +177,9 @@ let questTimer = 0
 let phoneQuestGoal = 10
 let tipQuestGoal = 30000
 let dropQuestGoal = 5
+let canQuestGoal = 8
 let lastQuestKind: SideQuest['kind'] | null = null
+let kitchenSecond = -1
 
 export function subscribe(listener: () => void) {
   listeners.add(listener)
@@ -260,13 +275,27 @@ export function acceptOffer() {
   const mission = offer.mission
   if (mission.premium) mission.deadline = performance.now() + 25000
   mission.contested = Math.random() < (mission.premium ? 0.82 : 0.72)
+  mission.rivalKind = mission.contested && Math.random() < 0.2 ? 'taxi' : 'rappi'
+  mission.kitchen = Math.random() < 0.32
+  mission.holdUntil = null
+  mission.cancelAt = Math.random() < 0.05 ? performance.now() + 10000 + Math.random() * 18000 : null
   game.mission = mission
   game.offer = null
   refreshRoute()
   if (mission.contested) {
     const away = Math.hypot(game.x - mission.pickup.x, game.z - mission.pickup.z)
     const place = away >= 1000 ? `${(away / 1000).toFixed(1)} km` : `${Math.round(away)} m`
-    showNotice('⬇️', '¡Tienes un competidor!', `Un Rappi se tira del cielo y corre a ${mission.brandName}. El local está a ${place}.`, 'pop', 4200)
+    if (mission.rivalKind === 'taxi') {
+      showNotice(
+        '🚕',
+        'Tu competidor es un taxista que hace de uber eats???',
+        `Se tira del cielo a 75 km/h. El local está a ${place}.`,
+        'pop',
+        4800,
+      )
+    } else {
+      showNotice('⬇️', '¡Tienes un competidor!', `Un Rappi se tira del cielo y corre a ${mission.brandName}. El local está a ${place}.`, 'pop', 4200, mission.brand)
+    }
   }
   emit()
 }
@@ -276,12 +305,20 @@ export function rejectOffer() {
 }
 
 export function snatchMission(reason: string) {
-  if (!game.mission || game.mission.phase !== 'pickup') return
+  const mission = game.mission
+  if (!mission || mission.phase !== 'pickup') return false
+  if (mission.holdUntil) return false
+  if (Math.hypot(game.x - mission.pickup.x, game.z - mission.pickup.z) <= 8) return false
+  const brand = mission.brand
+  const taxi = mission.rivalKind === 'taxi'
   game.mission = null
   game.carrying = false
   game.rival = null
+  premiumSecond = -1
+  kitchenSecond = -1
   refreshRoute()
-  showNotice('🛵', 'Te lo quitó un Rappi', reason, 'alert', 3600)
+  showNotice(taxi ? '🚕' : '🛵', taxi ? 'Te lo quitó un taxista' : 'Te lo quitó un Rappi', reason, 'alert', 3600, taxi ? undefined : brand)
+  return true
 }
 
 export function tickPremium() {
@@ -306,12 +343,85 @@ export function premiumLeft() {
   return Math.max(0, Math.ceil((mission.deadline - performance.now()) / 1000))
 }
 
+export const WAIT_RADIUS = 34
+
+export function kitchenLeft() {
+  const mission = game.mission
+  if (!mission?.holdUntil || mission.phase !== 'pickup') return 0
+  return Math.max(0, Math.ceil((mission.holdUntil - performance.now()) / 1000))
+}
+
+export function abortMission(title: string, text: string) {
+  const brand = game.mission?.brand
+  game.mission = null
+  game.carrying = false
+  game.rival = null
+  premiumSecond = -1
+  kitchenSecond = -1
+  refreshRoute()
+  showNotice('😬', title, text, 'alert', 3800, brand)
+}
+
+function finishPickup() {
+  const mission = game.mission
+  if (!mission || mission.phase !== 'pickup') return
+  const beatRival = mission.contested
+  mission.phase = 'deliver'
+  mission.deadline = null
+  mission.contested = false
+  mission.holdUntil = null
+  mission.cancelAt = null
+  premiumSecond = -1
+  kitchenSecond = -1
+  game.rival = null
+  game.carrying = true
+  if (beatRival) {
+    game.money += 10000
+    showFloater(`+ ${formatClp(10000)}`)
+    showNotice('🏁', '¡Le ganaste a tu competidor!', `Te dimos ${formatClp(10000)}. Llévalo a la casa.`, 'cash', 3800, mission.brand)
+  } else {
+    showNotice(
+      mission.premium ? '🔥' : '🍔',
+      mission.premium ? 'Premium recogido' : 'Recogiste un pedido',
+      `${mission.item}. Llévalo a la casa.`,
+      'pop',
+      3600,
+      mission.brand,
+    )
+  }
+  refreshRoute()
+}
+
+export function tickKitchen() {
+  const mission = game.mission
+  if (!mission?.holdUntil || mission.phase !== 'pickup') return
+  const dist = Math.hypot(game.x - mission.pickup.x, game.z - mission.pickup.z)
+  if (dist > WAIT_RADIUS) {
+    abortMission('Te fuiste de la zona', 'El local canceló porque el repartidor se fue.')
+    return
+  }
+  const left = Math.ceil((mission.holdUntil - performance.now()) / 1000)
+  if (left !== kitchenSecond) {
+    kitchenSecond = left
+    emit()
+  }
+  if (performance.now() < mission.holdUntil) return
+  finishPickup()
+}
+
+export function tickCancel() {
+  const mission = game.mission
+  if (!mission?.cancelAt) return
+  if (performance.now() < mission.cancelAt) return
+  abortMission('El cliente canceló', 'Se cayó el pedido. A esperar otro.')
+}
+
 function questGap() {
   return 14000 + Math.random() * 18000
 }
 
 function pickQuestKind(): SideQuest['kind'] {
-  const pool: SideQuest['kind'][] = ['phones', 'tips', 'drops']
+  const pool: SideQuest['kind'][] = ['phones', 'tips', 'drops', 'cans']
   const filtered = lastQuestKind ? pool.filter((kind) => kind !== lastQuestKind) : pool
   return filtered[Math.floor(Math.random() * filtered.length)]
 }
@@ -341,6 +451,19 @@ function makeSideQuest(kind: SideQuest['kind']): SideQuest {
       goal,
       progress: 0,
       reward: 6000 + Math.round(goal * 0.12),
+    }
+  }
+  if (kind === 'cans') {
+    const goal = canQuestGoal
+    return {
+      id: ++questToken,
+      kind,
+      emoji: '🥤',
+      title: `Recoge ${goal} tarros de jurel`,
+      hint: 'Están tirados en la calle',
+      goal,
+      progress: 0,
+      reward: 4000 + goal * 350,
     }
   }
   const goal = dropQuestGoal
@@ -385,6 +508,7 @@ function completeSideQuest() {
   if (quest.kind === 'phones') phoneQuestGoal = Math.min(40, phoneQuestGoal + 10)
   if (quest.kind === 'tips') tipQuestGoal = Math.min(120000, Math.round(tipQuestGoal * 1.6 / 1000) * 1000)
   if (quest.kind === 'drops') dropQuestGoal = Math.min(20, dropQuestGoal + 5)
+  if (quest.kind === 'cans') canQuestGoal = Math.min(40, canQuestGoal + 8)
   showNotice(quest.emoji, '¡Misión hecha!', `Bonus ${formatClp(quest.reward)}. Luego sale una más difícil.`, 'cash', 3800)
   scheduleSideQuest(22000 + Math.random() * 14000)
 }
@@ -405,9 +529,9 @@ function bumpSideQuest(kind: SideQuest['kind'], amount: number) {
   else emit()
 }
 
-export function showNotice(emoji: string, title: string, text: string, tone: Notice['tone'], ms = 4400) {
+export function showNotice(emoji: string, title: string, text: string, tone: Notice['tone'], ms = 4400, brand?: BrandId) {
   const id = ++noticeToken
-  game.notice = { id, emoji, title, text, tone }
+  game.notice = { id, emoji, title, text, tone, brand }
   emit()
   window.setTimeout(() => {
     if (id === noticeToken) {
@@ -513,6 +637,13 @@ function showFloater(text: string) {
   }, 1700)
 }
 
+export function eatCan() {
+  game.cans += 1
+  const tracking = game.sideQuest?.kind === 'cans'
+  bumpSideQuest('cans', 1)
+  if (!tracking) emit()
+}
+
 function pickDrop(origin: { x: number; z: number }, previous?: { address: string }) {
   const useBuilding = Math.random() < 0.4 && city.buildingDrops.length > 0
   const source = useBuilding ? city.buildingDrops : city.houses
@@ -552,6 +683,10 @@ export function makeMission(previous?: Mission | null): Mission {
     premium,
     deadline: null,
     contested: false,
+    rivalKind: 'rappi',
+    kitchen: false,
+    holdUntil: null,
+    cancelAt: null,
   }
 }
 
@@ -559,7 +694,7 @@ function brandPickup(id: BrandId) {
   if (id === 'pizzahut') {
     const spots = city.props.filter((prop) => prop.kind === 'pizza')
     const spot = spots[Math.floor(Math.random() * spots.length)]
-    if (spot) return { x: spot.x + Math.sin(spot.yaw) * 10, z: spot.z + Math.cos(spot.yaw) * 10 }
+    if (spot) return { x: spot.x + Math.sin(spot.yaw) * 8.4, z: spot.z + Math.cos(spot.yaw) * 8.4 }
   }
   const restaurant = city.restaurants.find((item) => item.id === id) ?? city.restaurants[0]
   return restaurant.pickup
@@ -577,9 +712,15 @@ export function refreshRoute() {
   game.path = route(game.x, game.z, target.x, target.z)
   game.distance = Math.hypot(game.x - target.x, game.z - target.z)
   const missionPrompt =
-    game.distance < 6.4
+    mission.holdUntil && mission.phase === 'pickup'
+      ? game.distance <= WAIT_RADIUS
+        ? `Espera ${kitchenLeft()}s · no te alejes`
+        : '¡Vuelve a la zona o se cancela!'
+      : game.distance < 6.4
       ? mission.phase === 'pickup'
-        ? 'E   ·   Recoger pedido'
+        ? mission.kitchen
+          ? 'E   ·   Pedir el pedido (hay que esperar)'
+          : 'E   ·   Recoger pedido'
         : 'E   ·   Entregar en la casa'
       : null
   applyPrompt(missionPrompt ?? venuePrompt())
@@ -678,27 +819,16 @@ export function tryInteract() {
   const target = mission && mission.phase !== 'cooldown' ? (mission.phase === 'pickup' ? mission.pickup : mission.drop) : null
   if (mission && target && Math.hypot(game.x - target.x, game.z - target.z) <= 6.4) {
     if (mission.phase === 'pickup') {
-      const beatRival = mission.contested
-      mission.phase = 'deliver'
-      mission.deadline = null
-      mission.contested = false
-      premiumSecond = -1
-      game.rival = null
-      game.carrying = true
-      if (beatRival) {
-        game.money += 10000
-        showFloater(`+ ${formatClp(10000)}`)
-        showNotice('🏁', '¡Le ganaste a tu competidor!', `Te dimos ${formatClp(10000)}. Llévalo a la casa.`, 'cash', 3800)
-      } else {
-        showNotice(
-          mission.premium ? '🔥' : '🍔',
-          mission.premium ? 'Premium recogido' : 'Recogiste un pedido',
-          `${mission.item}. Llévalo a la casa.`,
-          'pop',
-          3600,
-        )
+      if (mission.kitchen && !mission.holdUntil) {
+        mission.holdUntil = performance.now() + 25000
+        kitchenSecond = 25
+        showNotice('⏳', 'El pedido no está listo', 'Quédate cerca 25 segundos. Si te sales del radio, se cancela.', 'pop', 4200, mission.brand)
+        refreshRoute()
+        emit()
+        return
       }
-      refreshRoute()
+      if (mission.holdUntil && performance.now() < mission.holdUntil) return
+      finishPickup()
       return
     }
 
@@ -712,6 +842,7 @@ export function tryInteract() {
     game.mission = null
     game.rival = null
     premiumSecond = -1
+    kitchenSecond = -1
     refreshRoute()
     if (tip > 0) {
       game.money += tip
@@ -722,8 +853,8 @@ export function tryInteract() {
       (quest?.kind === 'drops' && quest.progress + 1 >= quest.goal) ||
       (quest?.kind === 'tips' && tip > 0 && quest.progress + tip >= quest.goal)
     if (!finishing) {
-      if (tip > 0) showNotice('🏠', 'Entregaste el pedido', `Te dieron propina de ${formatClp(tip)}.`, 'cash', 3600)
-      else showNotice('🏠', 'Entregaste el pedido', 'No te dieron propina.', 'pop', 3600)
+      if (tip > 0) showNotice('🏠', 'Entregaste el pedido', `Te dieron propina de ${formatClp(tip)}.`, 'cash', 3600, mission.brand)
+      else showNotice('🏠', 'Entregaste el pedido', 'No te dieron propina.', 'pop', 3600, mission.brand)
     }
     if (tip > 0) bumpSideQuest('tips', tip)
     bumpSideQuest('drops', 1)
@@ -741,6 +872,7 @@ export function startShift() {
   phoneQuestGoal = 10
   tipQuestGoal = 30000
   dropQuestGoal = 5
+  canQuestGoal = 8
   lastQuestKind = null
   emit()
   scheduleOffers(2200)

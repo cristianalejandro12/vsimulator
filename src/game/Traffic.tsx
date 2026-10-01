@@ -204,6 +204,7 @@ type Courier = {
   dropping: boolean
   racePath: { x: number; z: number }[]
   raceI: number
+  skin: 'rappi' | 'taxi'
 }
 
 function vainaBubble() {
@@ -286,6 +287,7 @@ function makeCouriers(): Courier[] {
       dropping: false,
       racePath: [],
       raceI: 0,
+      skin: 'rappi',
     }
   })
 }
@@ -381,7 +383,12 @@ export function Traffic() {
         rival.z = game.z + fz * ahead + rz * side
         rival.heading = game.heading
         rival.mode = 'rival'
-        rival.pace = Math.random() < 0.34 ? 65 / 3.6 : 60 / 3.6
+        rival.skin = mission!.rivalKind === 'taxi' ? 'taxi' : 'rappi'
+        if (rival.skin === 'taxi') rival.pace = 75 / 3.6
+        else {
+          const roll = Math.random()
+          rival.pace = (roll < 0.22 ? 72 : roll < 0.5 ? 65 : 60) / 3.6
+        }
         rival.until = now + 80000
         rival.hoverY = 26
         rival.dropping = true
@@ -405,7 +412,7 @@ export function Traffic() {
           }
         }
         const toYou = Math.hypot(rival.x - game.x, rival.z - game.z)
-        game.rival = { x: rival.x, z: rival.z, toShop, toYou, dropping: rival.dropping, kph: Math.round(rival.speed * 3.6) }
+        game.rival = { x: rival.x, z: rival.z, toShop, toYou, dropping: rival.dropping, kph: Math.round(rival.speed * 3.6), kind: rival.skin }
       }
     } else if (rivalId.current >= 0) {
       const rival = couriers[rivalId.current]
@@ -416,6 +423,7 @@ export function Traffic() {
         rival.speed = 11.2
         rival.hoverY = FILES.rappi.y
         rival.dropping = false
+        rival.skin = 'rappi'
         rival.racePath = []
         rival.raceI = 0
         rival.until = now + 12000 + Math.random() * 10000
@@ -455,9 +463,10 @@ export function Traffic() {
       }
       if (courier.mode === 'rival' && mission) {
         if (courier.dropping) {
-          courier.hoverY = THREE.MathUtils.damp(courier.hoverY, FILES.rappi.y, 5.8, step)
-          if (courier.hoverY <= FILES.rappi.y + 0.28) {
-            courier.hoverY = FILES.rappi.y
+          const ground = courier.skin === 'taxi' ? FILES.taxi.y : FILES.rappi.y
+          courier.hoverY = THREE.MathUtils.damp(courier.hoverY, ground, 5.8, step)
+          if (courier.hoverY <= ground + 0.28) {
+            courier.hoverY = ground
             courier.dropping = false
             courier.racePath = route(courier.x, courier.z, mission.pickup.x, mission.pickup.z)
             courier.raceI = 0
@@ -486,15 +495,20 @@ export function Traffic() {
           courier.z += Math.sin(courier.heading) * move
           const toDoor = Math.hypot(courier.x - mission.pickup.x, courier.z - mission.pickup.z)
           if (toDoor < 3.8 && mission.phase === 'pickup') {
-            snatchMission('¡Un Rappi se llevó el pedido!')
-            courier.mode = 'haul'
-            courier.speed = 12.2
-            courier.path = nearestLoop(courier.x, courier.z)
-            courier.d = closestDistance(courier.path, courier.x, courier.z)
-            courier.racePath = []
-            courier.until = now + 16000
-            rivalId.current = -1
-            game.rival = null
+            const stolen = snatchMission(courier.skin === 'taxi' ? '¡Un taxista se llevó el pedido!' : '¡Un Rappi se llevó el pedido!')
+            if (!stolen) {
+              courier.speed = 0
+            } else {
+              courier.mode = 'haul'
+              courier.skin = 'rappi'
+              courier.speed = 12.2
+              courier.path = nearestLoop(courier.x, courier.z)
+              courier.d = closestDistance(courier.path, courier.x, courier.z)
+              courier.racePath = []
+              courier.until = now + 16000
+              rivalId.current = -1
+              game.rival = null
+            }
           }
         }
       } else if (courier.mode === 'seek' || courier.mode === 'haul') {
@@ -533,14 +547,15 @@ export function Traffic() {
         const turn = Math.atan2(Math.sin(courier.park.heading - courier.heading), Math.cos(courier.park.heading - courier.heading))
         courier.heading += turn * Math.min(1, step * 4)
       }
-      if (now >= courier.nextShout && Math.random() < 0.7) {
+      if (now >= courier.nextShout && courier.skin !== 'taxi' && Math.random() < 0.7) {
         courier.shoutUntil = now + 2400
         courier.nextShout = now + 7000 + Math.random() * 10000
       } else if (now >= courier.nextShout) {
         courier.nextShout = now + 4000 + Math.random() * 7000
       }
       if (!courier.dropping) {
-        moverColliders.push(makeAxes(courier.heading, FILES.rappi.length * 0.92, FILES.rappi.width, courier.x, courier.z))
+        const body = courier.skin === 'taxi' ? FILES.taxi : FILES.rappi
+        moverColliders.push(makeAxes(courier.heading, body.length * 0.92, body.width, courier.x, courier.z))
       }
     }
     sim.forEach((car, index) => {
@@ -553,12 +568,17 @@ export function Traffic() {
     couriers.forEach((courier, index) => {
       const group = courierRefs.current[index]
       if (!group) return
+      const spec = courier.skin === 'taxi' ? FILES.taxi : FILES.rappi
       group.position.set(courier.x, courier.hoverY, courier.z)
-      group.rotation.y = FILES.rappi.nose - courier.heading
+      group.rotation.y = spec.nose - courier.heading
       if (courier.dropping) group.rotation.y += now * 0.004
+      const bike = group.children[0] as THREE.Object3D | undefined
+      const cab = group.children[1] as THREE.Object3D | undefined
+      if (bike) bike.visible = courier.skin !== 'taxi'
+      if (cab) cab.visible = courier.skin === 'taxi'
       const shout = shoutRefs.current[index]
       if (shout) {
-        const live = now < courier.shoutUntil
+        const live = courier.skin !== 'taxi' && now < courier.shoutUntil
         shout.visible = live
         if (live) {
           const t = 1 - (courier.shoutUntil - now) / 2400
@@ -586,7 +606,12 @@ export function Traffic() {
       ))}
       {couriers.map((courier, index) => (
         <group key={`rappi-${index}`} ref={(node) => { courierRefs.current[index] = node }}>
-          <VehicleModel url={FILES.rappi.url} length={FILES.rappi.length} yaw={FILES.rappi.yaw} />
+          <group>
+            <VehicleModel url={FILES.rappi.url} length={FILES.rappi.length} yaw={FILES.rappi.yaw} />
+          </group>
+          <group visible={false}>
+            <VehicleModel url={FILES.taxi.url} length={FILES.taxi.length} yaw={FILES.taxi.yaw} />
+          </group>
           <sprite
             ref={(node) => { shoutRefs.current[index] = node }}
             scale={[3.15, 1.22, 1]}

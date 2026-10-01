@@ -26,6 +26,9 @@ button, kbd { font-family: inherit; }
   box-shadow: 0 4px 0 #1a1a1a;
 }
 .cash { padding: 8px 12px; min-width: 148px; }
+.wallet { display: flex; align-items: stretch; gap: 8px; }
+.cans-chip { min-width: 88px; padding: 8px 10px; }
+.cans-chip strong { font-variant-numeric: tabular-nums; }
 .cash span, .ticket small, .eyebrow {
   display: block;
   font-size: 10px;
@@ -51,6 +54,11 @@ button, kbd { font-family: inherit; }
   animation: notice-life 4.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 .notice span { font-size: 56px; line-height: 1; }
+.notice-logo {
+  width: 72px; height: 72px; border-radius: 16px; flex: none;
+  object-fit: contain; background: #fff; padding: 6px;
+  box-shadow: 0 4px 0 #1a1a1a;
+}
 .notice strong { display: block; font-size: 30px; font-weight: 700; line-height: 1.05; }
 .notice p { margin: 6px 0 0; font-size: 20px; color: #f4f7fb; line-height: 1.2; }
 .notice-alert strong { color: #ffd0d0; }
@@ -127,6 +135,25 @@ button, kbd { font-family: inherit; }
 }
 .offer.ticket .offer-price { font-size: 20px; }
 .offer.ticket .offer-meta { margin: 6px 0; gap: 10px; font-size: 13px; }
+.offer.ticket.ticket-wait { width: 318px; padding-bottom: 12px; }
+.wait-uber {
+  display: flex; align-items: center; gap: 14px;
+  margin: 4px 0 2px; padding: 12px 8px 4px;
+  border-top: 1px solid #ececec;
+}
+.wait-uber-ring {
+  width: 78px; height: 78px; border-radius: 50%; flex: none;
+  background: conic-gradient(#111 var(--wait, 360deg), #e8e8e8 0);
+  display: grid; place-items: center;
+}
+.wait-uber-ring span {
+  width: 60px; height: 60px; border-radius: 50%; background: #fff;
+  display: grid; place-items: center;
+  font-size: 20px; font-weight: 800; letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.wait-uber strong { display: block; font-size: 18px; font-weight: 700; line-height: 1.15; }
+.wait-uber p { margin: 3px 0 0; color: #6a6a6a; font-size: 14px; font-weight: 650; }
 .offer.ticket .offer-route { gap: 6px; }
 .offer-dim { opacity: 0.42; }
 
@@ -145,28 +172,10 @@ button, kbd { font-family: inherit; }
   position: absolute; left: 14px; bottom: 300px; z-index: 41; width: 280px;
   display: flex; flex-direction: column; gap: 8px;
 }
-.side-quest {
-  padding: 8px 10px 10px; border-radius: 16px;
-  font-family: "Segoe UI", system-ui, sans-serif;
-  background: #fff; color: #111;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
-  animation: offer-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.side-quest-top {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
-}
-.side-quest-top span { color: #ff4d1a; }
-.side-quest-top em { font-style: normal; color: #111; }
-.side-quest-row { display: flex; gap: 8px; align-items: flex-start; }
-.side-quest-row b { font-size: 22px; line-height: 1; }
-.side-quest-row strong { display: block; font-size: 14px; line-height: 1.2; }
-.side-quest-row p { margin: 2px 0 0; color: #666; font-size: 12px; }
 .side-bar {
-  margin-top: 8px; height: 6px; border-radius: 99px; background: #ececec; overflow: hidden;
+  margin: 8px 2px 4px; height: 6px; border-radius: 99px; background: #ececec; overflow: hidden;
 }
-.side-bar i { display: block; height: 100%; background: #ff4d1a; border-radius: 99px; }
-.side-quest small { display: block; margin-top: 5px; color: #666; font-weight: 700; font-variant-numeric: tabular-nums; }
+.side-bar i { display: block; height: 100%; background: #111; border-radius: 99px; }
 .rival-card {
   position: relative; left: auto; bottom: auto; z-index: 41; width: 100%;
   padding: 0 12px 10px; border-radius: 20px;
@@ -203,10 +212,13 @@ button, kbd { font-family: inherit; }
 }
 .offer-head { display: flex; align-items: flex-start; gap: 10px; }
 .offer-mark {
-  width: 32px; height: 32px; border-radius: 9px; flex: none;
+  width: 36px; height: 36px; border-radius: 9px; flex: none;
   display: grid; place-items: center; color: #fff;
   font-weight: 800; font-size: 16px;
+  overflow: hidden; background: #fff;
+  box-shadow: 0 2px 0 #1a1a1a;
 }
+.offer-mark img { width: 100%; height: 100%; object-fit: contain; display: block; background: #fff; }
 .offer-name { font-weight: 700; font-size: 16px; line-height: 1.15; }
 .offer-name em { font-style: normal; margin-left: 6px; color: #8d8d8d; font-weight: 600; }
 .premium-tag {
@@ -215,7 +227,7 @@ button, kbd { font-family: inherit; }
 }
 .ticket-hot { box-shadow: 0 16px 40px rgba(255, 77, 26, 0.28), 0 0 0 2px #ff4d1a; }
 .premium-clock {
-  margin-left: auto; color: #ff4d1a; font-weight: 800; font-variant-numeric: tabular-nums;
+  margin-left: auto; color: #ff4d1a; font-weight: 800; font-size: 18px; font-variant-numeric: tabular-nums;
 }
 .offer-head p { margin: 2px 0 0; color: #666; font-size: 13px; }
 .offer-price { margin-left: auto; font-size: 22px; line-height: 1; letter-spacing: -0.03em; }

@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { city } from './game/city'
 import { blendedLook } from './game/day'
 import { CityWorld, RestaurantFallback, RestaurantModel } from './game/CityWorld'
+import { Cans } from './game/Cans'
 import { HUD, Loader, QuietLoad } from './game/HUD'
 import { Markers } from './game/Markers'
 import { Phones } from './game/Phones'
@@ -157,6 +158,7 @@ function World({ onReady }: { onReady: () => void }) {
       </Effects>
       <Suspense fallback={null}>
         <Phones />
+        <Cans />
       </Suspense>
     </>
   )

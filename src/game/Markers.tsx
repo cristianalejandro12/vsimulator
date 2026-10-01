@@ -1,7 +1,8 @@
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { game } from './store'
+import { city } from './city'
+import { game, kitchenLeft, WAIT_RADIUS } from './store'
 
 const ARROW = (() => {
   const shape = new THREE.Shape()
@@ -74,6 +75,7 @@ type ArrowSlot = { x: number; z: number; heading: number; placed: boolean }
 export function Markers() {
   const arrows = useRef<THREE.InstancedMesh>(null)
   const circle = useRef<THREE.Mesh>(null)
+  const waitRing = useRef<THREE.Mesh>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
   const slots = useMemo<ArrowSlot[]>(() => Array.from({ length: 70 }, () => ({ x: 0, z: 0, heading: 0, placed: false })), [])
 
@@ -127,12 +129,20 @@ export function Markers() {
       : null
     if (!target) {
       disc.visible = false
+      if (waitRing.current) waitRing.current.visible = false
       return
     }
     disc.visible = true
     disc.position.set(target.x, 0.46, target.z)
     const material = disc.material as THREE.MeshBasicMaterial
     material.color.set(mission?.phase === 'deliver' ? '#37d67a' : '#ffe14a')
+
+    const ring = waitRing.current
+    if (ring) {
+      const holding = !!(mission?.holdUntil && mission.phase === 'pickup')
+      ring.visible = holding
+      if (holding) ring.position.set(mission.pickup.x, 0.12, mission.pickup.z)
+    }
   })
 
   return (
@@ -144,6 +154,108 @@ export function Markers() {
         <circleGeometry args={[1.7, 40]} />
         <meshBasicMaterial color="#ffe14a" transparent opacity={0.72} side={THREE.DoubleSide} depthWrite={false} toneMapped={false} />
       </mesh>
+      <mesh ref={waitRing} rotation-x={-Math.PI / 2} visible={false}>
+        <ringGeometry args={[WAIT_RADIUS - 1.4, WAIT_RADIUS, 72]} />
+        <meshBasicMaterial color="#ffe14a" transparent opacity={0.38} side={THREE.DoubleSide} depthWrite={false} toneMapped={false} />
+      </mesh>
+      <KitchenClock />
     </group>
+  )
+}
+
+function kitchenAnchor(mission: NonNullable<typeof game.mission>) {
+  if (mission.brand === 'pizzahut') {
+    let best = city.props.find((prop) => prop.kind === 'pizza')
+    let dist = Infinity
+    for (const prop of city.props) {
+      if (prop.kind !== 'pizza') continue
+      const next = (prop.x - mission.pickup.x) ** 2 + (prop.z - mission.pickup.z) ** 2
+      if (next < dist) {
+        dist = next
+        best = prop
+      }
+    }
+    return { x: best?.x ?? mission.pickup.x, z: best?.z ?? mission.pickup.z, y: 11.4 }
+  }
+  const shop = city.restaurants.find((item) => item.id === mission.brand)
+  return { x: shop?.x ?? mission.pickup.x, z: shop?.z ?? mission.pickup.z, y: 21.2 }
+}
+
+function paintClock(canvas: HTMLCanvasElement, seconds: number) {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const size = canvas.width
+  const mid = size / 2
+  ctx.clearRect(0, 0, size, size)
+  ctx.beginPath()
+  ctx.arc(mid, mid, mid - 6, 0, Math.PI * 2)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+  ctx.lineWidth = 10
+  ctx.strokeStyle = '#111111'
+  ctx.stroke()
+  ctx.strokeStyle = '#111111'
+  ctx.lineWidth = 5
+  for (let tick = 0; tick < 12; tick++) {
+    const angle = (tick / 12) * Math.PI * 2 - Math.PI / 2
+    ctx.beginPath()
+    ctx.moveTo(mid + Math.cos(angle) * (mid - 28), mid + Math.sin(angle) * (mid - 28))
+    ctx.lineTo(mid + Math.cos(angle) * (mid - 14), mid + Math.sin(angle) * (mid - 14))
+    ctx.stroke()
+  }
+  const sweep = (seconds / 25) * Math.PI * 2
+  ctx.beginPath()
+  ctx.moveTo(mid, mid)
+  ctx.arc(mid, mid, mid - 36, -Math.PI / 2, -Math.PI / 2 + sweep)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(17,17,17,0.12)'
+  ctx.fill()
+  ctx.fillStyle = '#111111'
+  ctx.font = '700 72px Segoe UI, Trebuchet MS, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(`0:${String(seconds).padStart(2, '0')}`, mid, mid + 4)
+}
+
+function KitchenClock() {
+  const mesh = useRef<THREE.Mesh>(null)
+  const painted = useRef(-1)
+  const art = useMemo(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 256
+    canvas.height = 256
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.minFilter = THREE.LinearFilter
+    texture.magFilter = THREE.LinearFilter
+    return { canvas, texture }
+  }, [])
+
+  useFrame(({ camera }) => {
+    const board = mesh.current
+    if (!board) return
+    const mission = game.mission
+    const waiting = !!(mission?.holdUntil && mission.phase === 'pickup')
+    if (!waiting || !mission) {
+      board.visible = false
+      return
+    }
+    const left = kitchenLeft()
+    const anchor = kitchenAnchor(mission)
+    board.visible = true
+    board.position.set(anchor.x, anchor.y, anchor.z)
+    board.quaternion.copy(camera.quaternion)
+    if (left !== painted.current) {
+      painted.current = left
+      paintClock(art.canvas, left)
+      art.texture.needsUpdate = true
+    }
+  })
+
+  return (
+    <mesh ref={mesh} visible={false} renderOrder={8}>
+      <planeGeometry args={[4.6, 4.6]} />
+      <meshBasicMaterial map={art.texture} transparent depthWrite={false} toneMapped={false} />
+    </mesh>
   )
 }

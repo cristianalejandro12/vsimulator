@@ -9,6 +9,23 @@ export const SIDEWALK = 2.55
 export const LANE_OFFSET = 1.75
 export const PARK_OFFSET = 3.45
 
+const PIZZA_LOTS: Array<[number, number]> = [
+  [2, 6],
+  [4, 4],
+  [6, 5],
+  [1, 7],
+  [3, 3],
+  [7, 6],
+  [2, 3],
+  [4, 1],
+  [7, 4],
+  [1, 3],
+  [0, 2],
+  [5, 7],
+  [6, 1],
+]
+const PIZZA_LOT_KEYS = new Set(PIZZA_LOTS.map(([ix, iz]) => `${ix},${iz}`))
+
 export function nodesAt() {
   return GRID + 1
 }
@@ -256,7 +273,11 @@ export function createCity(): City {
 
   const placeBlock = (ix: number, iz: number) => {
     const key = `${ix},${iz}`
-    const edges: Array<'n' | 's' | 'e' | 'w'> = restaurantBlocks.has(key) ? ['n'] : ['n', 's', 'e', 'w']
+    const edges: Array<'n' | 's' | 'e' | 'w'> = restaurantBlocks.has(key)
+      ? ['n']
+      : PIZZA_LOT_KEYS.has(key)
+        ? ['n', 'e', 'w']
+        : ['n', 's', 'e', 'w']
     for (const edge of edges) addHouses(city, rng, ix, iz, edge)
   }
   for (let iz = 0; iz < 4; iz++) {
@@ -993,9 +1014,6 @@ function addProps(city: City) {
     ['panel', 1, 4],
     ['panel', 3, 7],
     ['panel', 6, 2],
-    ['pizza', 2, 6],
-    ['pizza', 4, 4],
-    ['pizza', 6, 5],
     ['horizon', 0, 4],
     ['horizon', 0, 6],
     ['horizon', 3, 4],
@@ -1003,9 +1021,6 @@ function addProps(city: City) {
     ['panel', 1, 0],
     ['panel', 4, 0],
     ['panel', 5, 6],
-    ['pizza', 1, 7],
-    ['pizza', 3, 3],
-    ['pizza', 7, 6],
     ['horizon', 0, 5],
     ['horizon', 2, 1],
     ['horizon', 2, 5],
@@ -1014,16 +1029,12 @@ function addProps(city: City) {
     ['panel', 3, 0],
     ['panel', 5, 1],
     ['panel', 6, 4],
-    ['pizza', 2, 3],
-    ['pizza', 4, 1],
     ['horizon', 3, 1],
     ['horizon', 4, 5],
     ['horizon', 6, 6],
     ['panel', 0, 1],
     ['panel', 2, 7],
     ['panel', 5, 2],
-    ['pizza', 7, 4],
-    ['pizza', 1, 3],
     ['horizon', 1, 6],
     ['horizon', 4, 3],
     ['horizon', 6, 0],
@@ -1032,9 +1043,6 @@ function addProps(city: City) {
     ['panel', 2, 2],
     ['panel', 3, 5],
     ['panel', 5, 4],
-    ['pizza', 0, 2],
-    ['pizza', 5, 7],
-    ['pizza', 6, 1],
     ['horizon', 3, 7],
     ['panel', 7, 3],
   ]
@@ -1060,6 +1068,26 @@ function addProps(city: City) {
         x: center.x + Math.sin(yaw) * (depth * 0.5 + 3.8),
         z: center.z + Math.cos(yaw) * (depth * 0.5 + 3.8),
       },
+    })
+  })
+
+  PIZZA_LOTS.forEach(([ix, iz], index) => {
+    const rect = blockRect(ix, iz)
+    const depth = 14
+    const x = (rect.x0 + rect.x1) / 2
+    const z = rect.z0 + 2.35 + depth / 2
+    const yaw = Math.PI
+    city.props.push({
+      id: `pizza-${index}`,
+      kind: 'pizza',
+      x,
+      z,
+      yaw,
+    })
+    city.asphalt.push({ x0: x - 14, z0: rect.z0 - 0.15, x1: x + 14, z1: rect.z0 + 3.4, y: 0.05 })
+    city.buildingDrops.push({
+      address: 'Pizza Hut · puerta',
+      delivery: { x, z: rect.z0 + 1.55 },
     })
   })
 }

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { useProgress } from '@react-three/drei'
 import { city } from './city'
+import { nearbyCans } from './Cans'
 import { nearbyPhones } from './Phones'
 import { bootAudioAndShift } from './Player'
-import { acceptOffer, clockLabel, formatClp, game, getVersion, premiumLeft, rejectOffer, subscribe, tickExtortion, tickPremium } from './store'
+import { acceptOffer, BRAND_LOGO, clockLabel, formatClp, game, getVersion, kitchenLeft, premiumLeft, rejectOffer, subscribe, tickCancel, tickExtortion, tickKitchen, tickPremium, WAIT_RADIUS, type BrandId } from './store'
 
 export function HUD() {
   const version = useSyncExternalStore(subscribe, getVersion, getVersion)
@@ -14,6 +15,8 @@ export function HUD() {
   const mapRef = useRef<HTMLCanvasElement>(null)
   const clockRef = useRef<HTMLSpanElement>(null)
   const timerRef = useRef<HTMLSpanElement>(null)
+  const waitClockRef = useRef<HTMLSpanElement>(null)
+  const waitFillRef = useRef<HTMLDivElement>(null)
   const rivalShopRef = useRef<HTMLSpanElement>(null)
   const rivalYouRef = useRef<HTMLSpanElement>(null)
 
@@ -59,6 +62,14 @@ export function HUD() {
         const left = premiumLeft()
         timerRef.current.textContent = left > 0 ? `0:${String(left).padStart(2, '0')}` : ''
       }
+      if (waitClockRef.current) {
+        const hold = kitchenLeft()
+        waitClockRef.current.textContent = hold > 0 ? `0:${String(hold).padStart(2, '0')}` : ''
+      }
+      if (waitFillRef.current) {
+        const hold = kitchenLeft()
+        waitFillRef.current.style.setProperty('--wait', `${(hold / 25) * 360}deg`)
+      }
       if (game.rival) {
         const shop = game.rival.toShop >= 1000 ? `${(game.rival.toShop / 1000).toFixed(1)} km` : `${Math.round(game.rival.toShop)} m`
         const you = game.rival.toYou >= 1000 ? `${(game.rival.toYou / 1000).toFixed(1)} km` : `${Math.round(game.rival.toYou)} m`
@@ -67,6 +78,8 @@ export function HUD() {
       }
       tickExtortion()
       tickPremium()
+      tickKitchen()
+      tickCancel()
       drawMap(ctx, canvas.width, canvas.height)
     }
     frame = requestAnimationFrame(loop)
@@ -74,23 +87,40 @@ export function HUD() {
   }, [])
 
   const mission = game.mission
-  const objective = mission?.phase === 'deliver' ? 'Entrega el pedido' : mission?.phase === 'pickup' ? 'Recoge el pedido' : 'Buscando pedido'
+  const waiting = !!(mission?.holdUntil && mission.phase === 'pickup')
+  const objective = waiting
+    ? 'Espera el pedido, no te alejes'
+    : mission?.phase === 'deliver'
+      ? 'Entrega el pedido'
+      : mission?.phase === 'pickup'
+        ? mission.kitchen
+          ? 'Llega y espera el pedido'
+          : 'Recoge el pedido'
+        : 'Buscando pedido'
 
   return (
     <div className="hud">
       <div className="top-left">
-        <div className="cash">
-          <span>CLP</span>
-          <strong>{formatClp(game.money)}</strong>
+        <div className="wallet">
+          <div className="cash">
+            <span>CLP</span>
+            <strong>{formatClp(game.money)}</strong>
+          </div>
+          <div className="cash cans-chip">
+            <span>TARROS</span>
+            <strong>🥤 {game.cans}</strong>
+          </div>
         </div>
         {game.banner && <div className="banner">{game.banner}</div>}
         <div className="daychip"><span ref={clockRef}>16:00:00</span></div>
       </div>
 
       {mission && mission.phase !== 'cooldown' && (
-        <div className={`offer ticket${mission.premium ? ' ticket-hot' : ''}`}>
+        <div className={`offer ticket${mission.premium ? ' ticket-hot' : ''}${waiting ? ' ticket-wait' : ''}`}>
           <div className="offer-head">
-            <div className="offer-mark" style={{ background: mission.color }}>{mission.brandName.slice(0, 1)}</div>
+            <div className="offer-mark">
+              <BrandMark brand={mission.brand} />
+            </div>
             <div>
               <div className="offer-name">
                 {mission.brandName}
@@ -104,15 +134,36 @@ export function HUD() {
             <span>{objective}</span>
             <span ref={etaRef}>8 min</span>
             <span ref={distRef}>0 m</span>
-            {mission.premium && mission.phase === 'pickup' && (
+            {mission.premium && mission.phase === 'pickup' && !waiting && (
               <span className="premium-clock" ref={timerRef}>0:25</span>
             )}
           </div>
+          {waiting && (
+            <div className="wait-uber">
+              <div className="wait-uber-ring" ref={waitFillRef}>
+                <span ref={waitClockRef}>0:25</span>
+              </div>
+              <div>
+                <strong>Preparando tu pedido</strong>
+                <p>Quédate en la zona · {WAIT_RADIUS} m</p>
+              </div>
+            </div>
+          )}
           <div className="offer-route">
             <div className={`offer-stop${mission.phase === 'pickup' ? '' : ' offer-dim'}`}>
               <i />
               <div>
-                <strong>{mission.phase === 'pickup' ? (mission.premium ? '¡Corre al local!' : 'Ahora') : 'Recogido'}</strong>
+                  <strong>
+                    {waiting
+                      ? 'No te alejes'
+                      : mission.phase === 'pickup'
+                        ? mission.kitchen
+                          ? 'Llega y espera'
+                          : mission.premium
+                            ? '¡Corre al local!'
+                            : 'Ahora'
+                        : 'Recogido'}
+                  </strong>
                 <p>{mission.brandName}</p>
               </div>
             </div>
@@ -135,33 +186,55 @@ export function HUD() {
       <canvas ref={mapRef} className="minimap" />
       <div className="job-stack">
         {game.sideQuest && (
-          <div key={game.sideQuest.id} className="side-quest">
-            <div className="side-quest-top">
-              <span>Opcional</span>
-              <em>{formatClp(game.sideQuest.reward)}</em>
-            </div>
-            <div className="side-quest-row">
-              <b>{game.sideQuest.emoji}</b>
+          <div key={game.sideQuest.id} className="offer">
+            <div className="offer-head">
+              <div className="offer-mark" style={{ background: '#111', color: '#fff' }}>{game.sideQuest.emoji}</div>
               <div>
-                <strong>{game.sideQuest.title}</strong>
+                <div className="offer-name">
+                  Opcional
+                  <em>Misión</em>
+                </div>
                 <p>{game.sideQuest.hint}</p>
+              </div>
+              <strong className="offer-price">{formatClp(game.sideQuest.reward)}</strong>
+            </div>
+            <div className="offer-meta">
+              <span>{game.sideQuest.title}</span>
+            </div>
+            <div className="offer-route">
+              <div className="offer-stop">
+                <i />
+                <div>
+                  <strong>
+                    {game.sideQuest.kind === 'tips'
+                      ? formatClp(game.sideQuest.progress)
+                      : game.sideQuest.progress}
+                  </strong>
+                  <p>Vas aquí</p>
+                </div>
+              </div>
+              <div className="offer-stop">
+                <i className="sq" />
+                <div>
+                  <strong>
+                    {game.sideQuest.kind === 'tips'
+                      ? formatClp(game.sideQuest.goal)
+                      : game.sideQuest.goal}
+                  </strong>
+                  <p>Meta</p>
+                </div>
               </div>
             </div>
             <div className="side-bar">
               <i style={{ width: `${Math.round((game.sideQuest.progress / game.sideQuest.goal) * 100)}%` }} />
             </div>
-            <small>
-              {game.sideQuest.kind === 'tips'
-                ? `${formatClp(game.sideQuest.progress)} / ${formatClp(game.sideQuest.goal)}`
-                : `${game.sideQuest.progress} / ${game.sideQuest.goal}`}
-            </small>
           </div>
         )}
         {game.offer && (
           <div key={game.offer.id} className="offer">
             <div className="offer-head">
-              <div className="offer-mark" style={{ background: game.offer.mission.color }}>
-                {game.offer.mission.brandName.slice(0, 1)}
+              <div className="offer-mark">
+                <BrandMark brand={game.offer.mission.brand} />
               </div>
               <div>
                 <div className="offer-name">
@@ -211,15 +284,23 @@ export function HUD() {
         )}
         {game.mission && game.mission.contested && game.mission.phase === 'pickup' && (
           <div className={`rival-card ${game.rival?.dropping ? 'rival-drop' : ''}`}>
-            <div className="rival-pop">{game.rival?.dropping ? '⬇️ ¡Cayó adelante tuyo!' : '🛵 Tienes un competidor'}</div>
+            <div className="rival-pop">
+              {game.mission.rivalKind === 'taxi'
+                ? '🚕 Tu competidor es un taxista que hace de uber eats???'
+                : game.rival?.dropping
+                  ? '⬇️ ¡Cayó adelante tuyo!'
+                  : '🛵 Tienes un competidor'}
+            </div>
             <div className="offer-head">
-              <div className="offer-mark" style={{ background: '#ff4d1a' }}>R</div>
+              <div className="offer-mark" style={{ background: game.mission.rivalKind === 'taxi' ? '#ffe56a' : '#ff4d1a', color: '#1a1a1a' }}>
+                {game.mission.rivalKind === 'taxi' ? '🚕' : 'R'}
+              </div>
               <div>
-                <div className="offer-name">Rappi</div>
+                <div className="offer-name">{game.mission.rivalKind === 'taxi' ? 'Taxista' : 'Rappi'}</div>
                 <p>
                   {game.rival?.dropping
                     ? 'Se tira del cielo, adelante'
-                    : `Va a ${game.mission.brandName} a ${game.rival?.kph ?? 60} km/h`}
+                    : `Va a ${game.mission.brandName} a ${game.rival?.kph ?? (game.mission.rivalKind === 'taxi' ? 75 : 60)} km/h`}
                 </p>
               </div>
             </div>
@@ -245,7 +326,11 @@ export function HUD() {
 
       {game.notice && (
         <div key={game.notice.id} className={`notice notice-${game.notice.tone}`}>
-          <span>{game.notice.emoji}</span>
+          {game.notice.brand ? (
+            <img className="notice-logo" src={BRAND_LOGO[game.notice.brand]} alt="" />
+          ) : (
+            <span>{game.notice.emoji}</span>
+          )}
           <div>
             <strong>{game.notice.title}</strong>
             <p>{game.notice.text}</p>
@@ -316,6 +401,10 @@ export function HUD() {
   )
 }
 
+function BrandMark({ brand }: { brand: BrandId }) {
+  return <img src={BRAND_LOGO[brand]} alt="" />
+}
+
 function quotaClock(deadline: number) {
   const left = Math.max(0, Math.ceil((deadline - performance.now()) / 1000))
   const seconds = left % 60
@@ -327,7 +416,7 @@ function project(wx: number, wz: number, width: number, height: number, scale: n
   const dz = wz - game.z
   const heading = game.camHeading
   const forward = dx * Math.cos(heading) + dz * Math.sin(heading)
-  const right = dx * Math.sin(heading) - dz * Math.cos(heading)
+  const right = -dx * Math.sin(heading) + dz * Math.cos(heading)
   return {
     x: width / 2 + right * scale,
     y: height / 2 - forward * scale,
@@ -411,6 +500,16 @@ function drawMap(ctx: CanvasRenderingContext2D, width: number, height: number) {
   if (mission && mission.phase !== 'cooldown') {
     const target = mission.phase === 'pickup' ? mission.pickup : mission.drop
     const projected = clampIcon(project(target.x, target.z, width, height, scale), width, height)
+    if (mission.holdUntil && mission.phase === 'pickup') {
+      const zone = project(mission.pickup.x, mission.pickup.z, width, height, scale)
+      ctx.fillStyle = 'rgba(255, 225, 74, 0.16)'
+      ctx.strokeStyle = 'rgba(255, 225, 74, 0.9)'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(zone.x, zone.y, WAIT_RADIUS * scale, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
     ctx.strokeStyle = mission.phase === 'deliver' ? '#37d67a' : '#ffe14a'
     ctx.lineWidth = 4
     ctx.beginPath()
@@ -418,8 +517,12 @@ function drawMap(ctx: CanvasRenderingContext2D, width: number, height: number) {
     ctx.stroke()
   }
 
-  const northForward = Math.sin(game.camHeading)
-  const northRight = -Math.cos(game.camHeading)
+  const north = project(game.x, game.z - 80, width, height, scale)
+  const cx = width / 2
+  const cy = height / 2
+  const ndx = north.x - cx
+  const ndy = north.y - cy
+  const nlen = Math.hypot(ndx, ndy) || 1
   const rim = width / 2 - 16
   ctx.fillStyle = '#ffffff'
   ctx.strokeStyle = '#173018'
@@ -427,8 +530,8 @@ function drawMap(ctx: CanvasRenderingContext2D, width: number, height: number) {
   ctx.font = `700 ${Math.round(width / 16)}px Fredoka, Trebuchet MS, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.strokeText('N', width / 2 + northRight * rim, height / 2 - northForward * rim)
-  ctx.fillText('N', width / 2 + northRight * rim, height / 2 - northForward * rim)
+  ctx.strokeText('N', cx + (ndx / nlen) * rim, cy + (ndy / nlen) * rim)
+  ctx.fillText('N', cx + (ndx / nlen) * rim, cy + (ndy / nlen) * rim)
 
   const emoji = Math.round(width / 10)
   ctx.font = `${emoji}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`
@@ -437,6 +540,10 @@ function drawMap(ctx: CanvasRenderingContext2D, width: number, height: number) {
   for (const phone of nearbyPhones(110)) {
     const spot = clampIcon(project(phone.x, phone.z, width, height, scale), width, height)
     drawOutlinedEmoji(ctx, '📱', spot.x, spot.y, Math.max(3, width / 90))
+  }
+  for (const can of nearbyCans(110)) {
+    const spot = clampIcon(project(can.x, can.z, width, height, scale), width, height)
+    drawOutlinedEmoji(ctx, '🥤', spot.x, spot.y, Math.max(3, width / 90))
   }
 
   ctx.save()
