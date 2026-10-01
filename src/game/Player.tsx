@@ -7,7 +7,7 @@ import { audio } from './audio'
 import { prepareVehicle } from './models'
 import { overlaps } from './physics'
 import { blendedLook } from './day'
-import { cycleTime, game, refreshRoute, startShift, tickClock, toggleMute, tryInteract } from './store'
+import { cycleTime, game, refreshRoute, startShift, tickClock, tryInteract } from './store'
 
 const RADIUS = 0.5
 
@@ -97,9 +97,8 @@ export function Player() {
     const hDown = !!pressed.KeyH
     const mDown = !!pressed.KeyM
     const tDown = !!pressed.KeyT
-    if (eDown && !prev.current.e) tryInteract()
+    if (eDown && !prev.current.e && !game.mapOpen) tryInteract()
     if (hDown && !prev.current.h) audio.horn(game.muted)
-    if (mDown && !prev.current.m) toggleMute()
     if (tDown && !prev.current.t && game.started) cycleTime()
     if (rDown && !prev.current.r && game.started) {
       game.x = city.spawn.x
@@ -117,7 +116,7 @@ export function Player() {
     camHeading.current += yawGap * (1 - Math.exp(-2.15 * dt))
     camPitch.current = THREE.MathUtils.damp(camPitch.current, pitchTarget.current, 4.2, dt)
     game.camHeading = camHeading.current
-    if (game.started) {
+    if (game.started && !game.mapOpen) {
       const throttle = pressed.KeyW || pressed.ArrowUp
       const brake = pressed.KeyS || pressed.ArrowDown
       const steer = (pressed.KeyD || pressed.ArrowRight ? 1 : 0) - (pressed.KeyA || pressed.ArrowLeft ? 1 : 0)

@@ -9,6 +9,7 @@ import { CityWorld, RestaurantFallback, RestaurantModel } from './game/CityWorld
 import { Cans } from './game/Cans'
 import { HUD, Loader, QuietLoad } from './game/HUD'
 import { Markers } from './game/Markers'
+import { Narco } from './game/Narco'
 import { Phones } from './game/Phones'
 import { Player } from './game/Player'
 import { Police } from './game/Police'
@@ -153,6 +154,7 @@ function World({ onReady }: { onReady: () => void }) {
         </Suspense>
       ))}
       <Markers />
+      <Narco />
       <Effects disableGamma multisamping={0}>
         <unrealBloomPass args={[BLOOM_RES, 0.30, 0.42, 0.82]} />
       </Effects>

@@ -62,6 +62,22 @@ export type SideQuest = {
   reward: number
 }
 
+export type StashJob = {
+  id: number
+  kg: number
+  reward: number
+  phase: 'pickup' | 'drop'
+  pickup: { x: number; z: number }
+  drop: { x: number; z: number; address: string }
+}
+
+export type StashOffer = {
+  id: number
+  kg: number
+  reward: number
+  drop: { x: number; z: number; address: string }
+}
+
 export const QUOTA = 200000
 const QUOTA_MS = 40000
 
@@ -164,6 +180,12 @@ export const game = {
   burnFx: null as { id: string; until: number } | null,
   rival: null as { x: number; z: number; toShop: number; toYou: number; dropping: boolean; kph: number; kind: 'rappi' | 'taxi' } | null,
   sideQuest: null as SideQuest | null,
+  cartel: false,
+  cartelTalk: false,
+  stashOffer: null as StashOffer | null,
+  stash: null as StashJob | null,
+  mapOpen: false,
+  waypoint: null as { x: number; z: number } | null,
 }
 
 const listeners = new Set<() => void>()
@@ -180,6 +202,8 @@ let dropQuestGoal = 5
 let canQuestGoal = 8
 let lastQuestKind: SideQuest['kind'] | null = null
 let kitchenSecond = -1
+let stashToken = 0
+let stashTimer = 0
 
 export function subscribe(listener: () => void) {
   listeners.add(listener)
@@ -223,6 +247,7 @@ function tripMinutes(meters: number) {
 
 function openOffer() {
   if (!game.started || game.offer) return
+  if (game.stash || game.stashOffer || game.cartelTalk) return
   const mission = makeMission(game.mission)
   const away = Math.hypot(game.x - mission.pickup.x, game.z - mission.pickup.z)
   const trip = Math.hypot(mission.pickup.x - mission.drop.x, mission.pickup.z - mission.drop.z)
@@ -271,7 +296,7 @@ function dismissOffer() {
 
 export function acceptOffer() {
   const offer = game.offer
-  if (!offer || game.carrying) return
+  if (!offer || game.carrying || game.stash) return
   const mission = offer.mission
   if (mission.premium) mission.deadline = performance.now() + 25000
   mission.contested = Math.random() < (mission.premium ? 0.82 : 0.72)
@@ -343,7 +368,7 @@ export function premiumLeft() {
   return Math.max(0, Math.ceil((mission.deadline - performance.now()) / 1000))
 }
 
-export const WAIT_RADIUS = 34
+export const WAIT_RADIUS = 58
 
 export function kitchenLeft() {
   const mission = game.mission
@@ -543,6 +568,11 @@ export function showNotice(emoji: string, title: string, text: string, tone: Not
 
 function venuePrompt() {
   if (!game.started) return null
+  const narco = city.narco
+  if (Math.hypot(game.x - narco.talk.x, game.z - narco.talk.z) < 7.2) {
+    if (game.cartelTalk) return 'Enter  ·  Sí     Esc  ·  No'
+    if (!game.cartel) return 'E   ·   Hablar'
+  }
   let closest: (typeof city.venues)[number] | null = null
   let best = 8
   for (const venue of city.venues) {
@@ -655,6 +685,112 @@ function pickDrop(origin: { x: number; z: number }, previous?: { address: string
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
+function scheduleStash(delay = 16000 + Math.random() * 14000) {
+  window.clearTimeout(stashTimer)
+  stashTimer = window.setTimeout(() => {
+    if (!game.started || !game.cartel) return
+    if (game.stash || game.stashOffer || game.mission || game.cartelTalk) {
+      scheduleStash(5000)
+      return
+    }
+    openStashOffer()
+    scheduleStash()
+  }, delay)
+}
+
+function openStashOffer() {
+  if (!game.started || !game.cartel || game.stash || game.stashOffer || game.mission || game.cartelTalk) return
+  const kgPool = [18, 22, 25, 30, 32, 36]
+  const kg = kgPool[Math.floor(Math.random() * kgPool.length)]
+  const reward = kg * 16500
+  const drop = pickDrop(city.narco.stash)
+  const id = ++stashToken
+  game.stashOffer = {
+    id,
+    kg,
+    reward,
+    drop: { x: drop.delivery.x, z: drop.delivery.z, address: drop.address },
+  }
+  audio.order(game.muted)
+  emit()
+  window.setTimeout(() => {
+    if (game.stashOffer?.id === id) {
+      game.stashOffer = null
+      emit()
+    }
+  }, 24000)
+}
+
+export function acceptCartel() {
+  if (!game.cartelTalk) return
+  game.cartelTalk = false
+  game.cartel = true
+  showNotice('🟢', 'Entraste al Tren de Aragua', 'Los encargos salen en La Pista. Recoges el paquete y lo dejas en una casa.', 'fire', 4400)
+  scheduleStash(2800)
+}
+
+export function refuseCartel() {
+  if (!game.cartelTalk) return
+  game.cartelTalk = false
+  emit()
+}
+
+export function acceptStash() {
+  const offer = game.stashOffer
+  if (!offer || game.mission || game.carrying || game.stash) return
+  game.stashOffer = null
+  game.stash = {
+    id: offer.id,
+    kg: offer.kg,
+    reward: offer.reward,
+    phase: 'pickup',
+    pickup: { x: city.narco.stash.x, z: city.narco.stash.z },
+    drop: offer.drop,
+  }
+  refreshRoute()
+  showNotice('📦', `${offer.kg} kg`, `Recógelo en La Pista. Pagan ${formatClp(offer.reward)}.`, 'pop', 4000)
+}
+
+export function rejectStash() {
+  if (!game.stashOffer) return
+  game.stashOffer = null
+  emit()
+}
+
+function tryDealer() {
+  const narco = city.narco
+  if (Math.hypot(game.x - narco.talk.x, game.z - narco.talk.z) > 7.2) return false
+  if (game.cartelTalk) return true
+  if (!game.cartel) {
+    game.cartelTalk = true
+    emit()
+    return true
+  }
+  return false
+}
+
+function tryStash() {
+  const job = game.stash
+  if (!job) return false
+  const target = job.phase === 'pickup' ? job.pickup : job.drop
+  if (Math.hypot(game.x - target.x, game.z - target.z) > 6.4) return false
+  if (job.phase === 'pickup') {
+    job.phase = 'drop'
+    game.carrying = true
+    refreshRoute()
+    showNotice('📦', `Llevas ${job.kg} kg`, 'Llévalo a la casa. Te pagan al dejarlo.', 'pop', 3600)
+    return true
+  }
+  game.money += job.reward
+  game.carrying = false
+  game.stash = null
+  showFloater(`+ ${formatClp(job.reward)}`)
+  showNotice('💵', 'Entregaste el paquete', `${job.kg} kg · ${formatClp(job.reward)}.`, 'cash', 4200)
+  refreshRoute()
+  scheduleStash(12000 + Math.random() * 14000)
+  return true
+}
+
 export function makeMission(previous?: Mission | null): Mission {
   let brand = BRANDS[Math.floor(Math.random() * BRANDS.length)]
   if (previous && Math.random() < 0.75) {
@@ -701,8 +837,37 @@ function brandPickup(id: BrandId) {
 }
 
 export function refreshRoute() {
+  const stash = game.stash
   const mission = game.mission
+  const food = !!(mission && mission.phase !== 'cooldown')
+  if (stash && !food) {
+    const target = stash.phase === 'pickup' ? stash.pickup : stash.drop
+    game.path = route(game.x, game.z, target.x, target.z)
+    game.distance = Math.hypot(game.x - target.x, game.z - target.z)
+    const stashPrompt =
+      game.distance < 6.4
+        ? stash.phase === 'pickup'
+          ? 'E   ·   Recoger el paquete'
+          : 'E   ·   Entregar el paquete'
+        : null
+    applyPrompt(stashPrompt ?? venuePrompt())
+    return
+  }
   if (!mission || mission.phase === 'cooldown') {
+    if (game.waypoint) {
+      const away = Math.hypot(game.x - game.waypoint.x, game.z - game.waypoint.z)
+      if (away < 8) {
+        game.waypoint = null
+        game.path = []
+        game.distance = 0
+        applyPrompt(venuePrompt())
+        return
+      }
+      game.path = route(game.x, game.z, game.waypoint.x, game.waypoint.z)
+      game.distance = away
+      applyPrompt(venuePrompt())
+      return
+    }
     game.path = []
     game.distance = 0
     applyPrompt(venuePrompt())
@@ -815,6 +980,7 @@ export function cycleTime() {
 
 export function tryInteract() {
   if (!game.started) return
+  if (tryStash()) return
   const mission = game.mission
   const target = mission && mission.phase !== 'cooldown' ? (mission.phase === 'pickup' ? mission.pickup : mission.drop) : null
   if (mission && target && Math.hypot(game.x - target.x, game.z - target.z) <= 6.4) {
@@ -860,6 +1026,7 @@ export function tryInteract() {
     bumpSideQuest('drops', 1)
     return
   }
+  if (tryDealer()) return
   tryVenue()
 }
 
@@ -869,6 +1036,12 @@ export function startShift() {
   game.mission = null
   game.path = []
   game.sideQuest = null
+  game.cartel = false
+  game.cartelTalk = false
+  game.stashOffer = null
+  game.stash = null
+  game.mapOpen = false
+  game.waypoint = null
   phoneQuestGoal = 10
   tipQuestGoal = 30000
   dropQuestGoal = 5
@@ -877,6 +1050,22 @@ export function startShift() {
   emit()
   scheduleOffers(2200)
   scheduleSideQuest(9000)
+}
+
+export function toggleMap() {
+  if (!game.started) return
+  game.mapOpen = !game.mapOpen
+  emit()
+}
+
+export function setWaypoint(x: number, z: number) {
+  game.waypoint = { x, z }
+  refreshRoute()
+}
+
+export function clearWaypoint() {
+  game.waypoint = null
+  refreshRoute()
 }
 
 export function toggleMute() {

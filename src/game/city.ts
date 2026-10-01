@@ -173,6 +173,15 @@ export type Restaurant = {
 
 export type Quad = { x0: number; z0: number; x1: number; z1: number; y: number }
 
+export type NarcoZone = {
+  name: string
+  x: number
+  z: number
+  talk: { x: number; z: number }
+  stash: { x: number; z: number }
+  rect: Quad
+}
+
 export type City = {
   grass: Quad[]
   asphalt: Quad[]
@@ -198,6 +207,7 @@ export type City = {
   signs: PlaceSign[]
   props: CityProp[]
   landmarks: Landmark[]
+  narco: NarcoZone
   buildingDrops: BuildingDrop[]
   colliders: Collider[]
   restaurants: Restaurant[]
@@ -255,6 +265,14 @@ export function createCity(): City {
     signs: [],
     props: [],
     landmarks: [],
+    narco: {
+      name: 'La Pista',
+      x: 0,
+      z: 0,
+      talk: { x: 0, z: 0 },
+      stash: { x: 0, z: 0 },
+      rect: { x0: 0, z0: 0, x1: 0, z1: 0, y: 0 },
+    },
     buildingDrops: [],
     colliders: [],
     restaurants: [],
@@ -273,6 +291,7 @@ export function createCity(): City {
 
   const placeBlock = (ix: number, iz: number) => {
     const key = `${ix},${iz}`
+    if (key === '7,7') return
     const edges: Array<'n' | 's' | 'e' | 'w'> = restaurantBlocks.has(key)
       ? ['n']
       : PIZZA_LOT_KEYS.has(key)
@@ -970,16 +989,7 @@ function addChile(city: City) {
   addFrontWindows(city, store.x, store.z, 11, 8, 1)
   addSign(city, store.x, 5.2, store.z - 4.3, 'Almacén', '#6b5344', '#fff4d6')
 
-  const plaza = blockCenter(7, 7)
-  pushBox(city.extras, plaza.x, 0.12, plaza.z, 20, 0.08, 16, 0, '#d7d2c8')
-  pushBox(city.tanks, plaza.x, 0.45, plaza.z, 2.4, 0.55, 2.4, 0, '#9fd4ee')
-  pushBox(city.poles, plaza.x, 4.2, plaza.z, 0.12, 8.2, 0.12, 0, '#f7f4ee')
-  city.flags.push({ x: plaza.x + 0.7, z: plaza.z, rot: 0.6 })
-  for (const [dx, dz] of [[-6, -4], [6, -4], [-6, 4], [6, 4]] as const) {
-    pushBox(city.extras, plaza.x + dx, 0.42, plaza.z + dz, 2.4, 0.4, 0.6, 0, '#6b5344')
-    addTree(city, plaza.x + dx * 1.35, plaza.z + dz * 1.5, 1.05)
-  }
-  addSign(city, plaza.x, 2.4, plaza.z - 7.2, 'Plaza', '#3d6ea8', '#ffffff')
+  addNarcoBarrio(city)
 
   for (const spot of [
     [5, 5, 6, '#f4efe6', '#6b5344'],
@@ -997,7 +1007,6 @@ function addChile(city: City) {
     [2, 2, 9, '#eef2f8', '#51667e'],
     [4, 4, 6, '#f4efe6', '#6b5344'],
     [6, 5, 10, '#dce5f0', '#384a60'],
-    [7, 7, 8, '#f2ebe3', '#6b5344'],
     [0, 4, 7, '#f7f4ee', '#5a6e86'],
     [3, 3, 11, '#d5e0ee', '#2c3c52'],
   ] as const) {
@@ -1090,6 +1099,84 @@ function addProps(city: City) {
       delivery: { x, z: rect.z0 + 1.55 },
     })
   })
+}
+
+function addNarcoBarrio(city: City) {
+  const rect = blockRect(7, 7)
+  const x = (rect.x0 + rect.x1) / 2
+  const z = (rect.z0 + rect.z1) / 2
+  const talk = { x: x - 3.2, z: z + 1.4 }
+  const stash = { x: x + 8.2, z: z - 6.4 }
+  city.narco = {
+    name: 'La Pista',
+    x,
+    z,
+    talk,
+    stash,
+    rect: { x0: rect.x0, z0: rect.z0, x1: rect.x1, z1: rect.z1, y: 0 },
+  }
+
+  pushBox(city.extras, x, 0.09, z, 50, 0.14, 50, 0, '#1a1612')
+  city.asphalt.push({ x0: rect.x0 + 4, z0: rect.z0 + 4, x1: rect.x1 - 4, z1: rect.z1 - 4, y: 0.07 })
+
+  const shed = (sx: number, sz: number, w: number, d: number, h: number, wall: string, roof: string) => {
+    pushBox(city.walls, sx, h / 2, sz, w, h, d, 0, wall)
+    pushBox(city.roofs, sx, h + 0.18, sz, w + 0.8, 0.32, d + 0.8, 0, roof)
+    pushBox(city.doors, sx, 1.2, sz - d / 2 - 0.05, 1.4, 2.2, 0.12, 0, '#1a120e')
+    city.colliders.push(makeAxes(0, w, d, sx, sz))
+  }
+
+  shed(x - 12, z + 14, 18, 12, 5.4, '#2c2622', '#3a2418')
+  shed(x + 14, z + 12, 14, 16, 4.6, '#242018', '#4a2a1c')
+  shed(x - 14, z - 14, 16, 10, 3.8, '#211c18', '#2f2218')
+  shed(x + 13, z - 14, 12, 9, 3.4, '#2a2018', '#3d281c')
+
+  pushBox(city.extras, x + 8.2, 2.15, z - 10.2, 8.4, 0.08, 5.2, 0, '#245c32')
+  pushBox(city.poles, x + 4.4, 2.1, z - 10.2, 0.12, 4.2, 0.12, 0, '#1a1a1a')
+  pushBox(city.poles, x + 12, 2.1, z - 10.2, 0.12, 4.2, 0.12, 0, '#1a1a1a')
+
+  for (const [gx, gz, color] of [
+    [x - 6, z + 6, '#1f6b32'],
+    [x - 4.4, z + 6.2, '#8b1c1c'],
+    [x - 5.2, z + 7.4, '#111111'],
+    [x + 6, z + 8, '#245a2c'],
+    [x + 7.2, z + 7.2, '#6b1212'],
+  ] as const) {
+    pushBox(city.extras, gx, 1.6, gz, 0.12, 2.4, 2.8, 0, color)
+  }
+
+  for (const [bx, bz] of [
+    [x + 6.4, z - 5.2],
+    [x + 7.6, z - 5.6],
+    [x + 8.8, z - 5],
+    [x + 7, z - 6.8],
+    [x + 9.2, z - 6.6],
+  ] as const) {
+    pushBox(city.tanks, bx, 0.55, bz, 0.7, 0.95, 0.7, 0, '#1f3d24')
+  }
+
+  pushBox(city.extras, x + 8.4, 0.42, z - 7.4, 2.4, 0.7, 1.5, 0, '#e8e4da')
+  pushBox(city.extras, x + 8.5, 0.92, z - 7.3, 2.1, 0.55, 1.25, 0, '#f4f1ea')
+  pushBox(city.extras, x + 8.3, 1.38, z - 7.5, 1.8, 0.42, 1.1, 0, '#f7f7f2')
+
+  for (let i = 0; i < 8; i++) {
+    const t = i / 7
+    const px = x - 10 + t * 22
+    const pz = z - 2 + Math.sin(i * 0.9) * 3
+    pushBox(city.poles, px, 2.8, pz, 0.08, 5.4, 0.08, 0, '#2a2a2a')
+    pushBox(city.lampHeads, px, 5.4, pz, 0.28, 0.16, 0.28, 0, i % 2 === 0 ? '#3dff78' : '#ff3b3b')
+  }
+
+  for (const [fx, fz, fw, fd] of [
+    [x, z + 20.5, 28, 0.18],
+    [x, z - 20.5, 22, 0.18],
+    [x - 21, z, 0.18, 24],
+    [x + 21, z + 2, 0.18, 18],
+  ] as const) {
+    pushBox(city.fences, fx, 1.05, fz, fw, 2.05, fd, 0, '#1a1a1a')
+  }
+
+  addSign(city, x, 3.4, z - 22.2, 'La Pista', '#143018', '#7cff6a')
 }
 
 function addLandmarks(city: City) {
