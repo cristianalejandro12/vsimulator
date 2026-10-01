@@ -83,8 +83,8 @@ function Clouds() {
   )
   useFrame((_, dt) => {
     const look = blendedLook(game.clock)
-    const tint = look.label === 'Noche' ? '#8fa3c8' : look.label === 'Atardecer' ? '#ffe0c0' : '#ffffff'
-    const opacity = look.label === 'Noche' ? 0.28 : look.label === 'Atardecer' ? 0.42 : 0.55
+    const tint = look.label === 'Noche' ? '#4a5a78' : look.label === 'Atardecer' ? '#ffe0c0' : '#ffffff'
+    const opacity = look.label === 'Noche' ? 0.16 : look.label === 'Atardecer' ? 0.42 : 0.55
     mats.current.forEach((mat) => {
       if (!mat) return
       mat.color.set(tint)

@@ -4,7 +4,8 @@ import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { GRID, LANE_OFFSET, city, roadCenterX, roadCenterZ, type VehicleKey } from './city'
 import { VehicleModel } from './models'
-import { game } from './store'
+import { route } from './gps'
+import { game, poke, snatchMission } from './store'
 import { makeAxes, moverColliders } from './physics'
 
 const FILES: Record<VehicleKey, { url: string; length: number; width: number; y: number; yaw: number; nose: number }> = {
@@ -69,6 +70,25 @@ function blockLoop(i: number, j: number) {
   const first = points[0]
   cum.push(cum[cum.length - 1] + Math.hypot(first.x - last.x, first.z - last.z))
   return { points, cum, length: cum[cum.length - 1] }
+}
+
+function nearestLoop(x: number, z: number) {
+  let bestI = 0
+  let bestJ = 0
+  let best = Infinity
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const cx = (roadCenterX(i) + roadCenterX(i + 1)) / 2
+      const cz = (roadCenterZ(j) + roadCenterZ(j + 1)) / 2
+      const dist = Math.hypot(cx - x, cz - z)
+      if (dist < best) {
+        best = dist
+        bestI = i
+        bestJ = j
+      }
+    }
+  }
+  return loopAt(bestI, bestJ)
 }
 
 function closestDistance(path: Path, x: number, z: number) {
@@ -168,7 +188,7 @@ function stallSpots(): Stall[] {
 }
 
 type Courier = {
-  mode: 'wait' | 'seek' | 'haul'
+  mode: 'wait' | 'seek' | 'haul' | 'rival'
   until: number
   path: Path
   d: number
@@ -177,6 +197,47 @@ type Courier = {
   heading: number
   park: Stall
   speed: number
+  shoutUntil: number
+  nextShout: number
+  pace: number
+  hoverY: number
+  dropping: boolean
+  racePath: { x: number; z: number }[]
+  raceI: number
+}
+
+function vainaBubble() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1024
+  canvas.height = 420
+  const ctx = canvas.getContext('2d')
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  if (!ctx) return texture
+  ctx.clearRect(0, 0, 1024, 420)
+  ctx.fillStyle = '#1a1a1a'
+  ctx.beginPath()
+  ctx.roundRect(18, 18, 988, 300, 48)
+  ctx.fill()
+  ctx.fillStyle = '#ffe56a'
+  ctx.beginPath()
+  ctx.roundRect(36, 36, 952, 264, 38)
+  ctx.fill()
+  ctx.fillStyle = '#1a1a1a'
+  ctx.beginPath()
+  ctx.moveTo(430, 300)
+  ctx.lineTo(512, 400)
+  ctx.lineTo(594, 300)
+  ctx.fill()
+  ctx.fillStyle = '#1a1a1a'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.font = '800 52px Fredoka, "Trebuchet MS", sans-serif'
+  ctx.fillText('es mucha la vaina', 512, 120)
+  ctx.font = '800 58px Fredoka, "Trebuchet MS", sans-serif'
+  ctx.fillText('marico !!!!!!!!', 512, 198)
+  texture.needsUpdate = true
+  return texture
 }
 
 function makeCouriers(): Courier[] {
@@ -201,6 +262,13 @@ function makeCouriers(): Courier[] {
       heading: waiting ? park.heading : pose.heading,
       park,
       speed: mode === 'haul' ? 12.4 : 11.2,
+      shoutUntil: 0,
+      nextShout: now + 6000 + index * 3500 + Math.random() * 8000,
+      pace: 0.78 + Math.random() * 0.28,
+      hoverY: FILES.rappi.y,
+      dropping: false,
+      racePath: [],
+      raceI: 0,
     }
   })
 }
@@ -208,6 +276,10 @@ function makeCouriers(): Courier[] {
 export function Traffic() {
   const couriers = useMemo(() => makeCouriers(), [])
   const courierRefs = useRef<Array<THREE.Group | null>>([])
+  const shoutRefs = useRef<Array<THREE.Sprite | null>>([])
+  const dropRefs = useRef<Array<THREE.Mesh | null>>([])
+  const shoutTex = useMemo(() => vainaBubble(), [])
+  const rivalId = useRef(-1)
   const sim = useMemo<SimCar[]>(() => {
     return FLEET.map((item) => {
       const path = loopAt(item.i, item.j)
@@ -276,10 +348,71 @@ export function Traffic() {
     }
     const now = performance.now()
     const stalls = stallSpots()
+    const mission = game.mission
+    const racing = !!(mission && mission.phase === 'pickup' && mission.contested)
+    if (racing) {
+      if (rivalId.current < 0 || !couriers[rivalId.current] || couriers[rivalId.current].mode !== 'rival') {
+        rivalId.current = Math.floor(Math.random() * couriers.length)
+        const rival = couriers[rivalId.current]
+        const fx = Math.cos(game.heading)
+        const fz = Math.sin(game.heading)
+        const rx = Math.sin(game.heading)
+        const rz = -Math.cos(game.heading)
+        const ahead = 8.2 + Math.random() * 3.4
+        const side = (Math.random() < 0.5 ? -1 : 1) * (1.6 + Math.random() * 2)
+        rival.x = game.x + fx * ahead + rx * side
+        rival.z = game.z + fz * ahead + rz * side
+        rival.heading = game.heading
+        rival.mode = 'rival'
+        rival.pace = Math.random() < 0.34 ? 65 / 3.6 : 60 / 3.6
+        rival.until = now + 80000
+        rival.hoverY = 26
+        rival.dropping = true
+        rival.racePath = []
+        rival.raceI = 0
+        poke()
+      }
+      const rival = couriers[rivalId.current]
+      if (rival) {
+        rival.speed = rival.pace
+        let toShop = Math.hypot(rival.x - mission!.pickup.x, rival.z - mission!.pickup.z)
+        if (rival.racePath.length) {
+          toShop = 0
+          let cx = rival.x
+          let cz = rival.z
+          for (let i = rival.raceI; i < rival.racePath.length; i++) {
+            const node = rival.racePath[i]
+            toShop += Math.hypot(node.x - cx, node.z - cz)
+            cx = node.x
+            cz = node.z
+          }
+        }
+        const toYou = Math.hypot(rival.x - game.x, rival.z - game.z)
+        game.rival = { x: rival.x, z: rival.z, toShop, toYou, dropping: rival.dropping, kph: Math.round(rival.speed * 3.6) }
+      }
+    } else if (rivalId.current >= 0) {
+      const rival = couriers[rivalId.current]
+      if (rival && rival.mode === 'rival') {
+        rival.path = nearestLoop(rival.x, rival.z)
+        rival.d = closestDistance(rival.path, rival.x, rival.z)
+        rival.mode = 'seek'
+        rival.speed = 11.2
+        rival.hoverY = FILES.rappi.y
+        rival.dropping = false
+        rival.racePath = []
+        rival.raceI = 0
+        rival.until = now + 12000 + Math.random() * 10000
+      }
+      rivalId.current = -1
+      game.rival = null
+    } else {
+      game.rival = null
+    }
+
     for (const courier of couriers) {
-      if (now >= courier.until) {
+      if (courier.mode !== 'rival' && now >= courier.until) {
         if (courier.mode === 'wait') {
-          courier.path = loopAt(Math.floor(Math.random() * GRID), Math.floor(Math.random() * GRID))
+          courier.path = nearestLoop(courier.x, courier.z)
           courier.d = closestDistance(courier.path, courier.x, courier.z)
           courier.mode = Math.random() < 0.55 ? 'haul' : 'seek'
           courier.speed = courier.mode === 'haul' ? 12.6 : 11.1
@@ -294,7 +427,7 @@ export function Traffic() {
           courier.park = next
           courier.mode = Math.random() < 0.4 ? 'wait' : 'seek'
           if (courier.mode === 'seek') {
-            courier.path = loopAt(Math.floor(Math.random() * GRID), Math.floor(Math.random() * GRID))
+            courier.path = nearestLoop(courier.x, courier.z)
             courier.d = closestDistance(courier.path, courier.x, courier.z)
             courier.speed = 11.1
             courier.until = now + 14000 + Math.random() * 16000
@@ -303,20 +436,95 @@ export function Traffic() {
           }
         }
       }
-      if (courier.mode === 'seek' || courier.mode === 'haul') {
-        courier.d += courier.speed * step
+      if (courier.mode === 'rival' && mission) {
+        if (courier.dropping) {
+          courier.hoverY = THREE.MathUtils.damp(courier.hoverY, FILES.rappi.y, 5.8, step)
+          if (courier.hoverY <= FILES.rappi.y + 0.28) {
+            courier.hoverY = FILES.rappi.y
+            courier.dropping = false
+            courier.racePath = route(courier.x, courier.z, mission.pickup.x, mission.pickup.z)
+            courier.raceI = 0
+            poke()
+          }
+        } else {
+          if (!courier.racePath.length) {
+            courier.racePath = route(courier.x, courier.z, mission.pickup.x, mission.pickup.z)
+            courier.raceI = 0
+          }
+          const points = courier.racePath
+          while (courier.raceI < points.length - 1) {
+            const node = points[courier.raceI]
+            if (Math.hypot(courier.x - node.x, courier.z - node.z) < 4.2) courier.raceI += 1
+            else break
+          }
+          const target = points[Math.min(courier.raceI, points.length - 1)]
+          const dx = target.x - courier.x
+          const dz = target.z - courier.z
+          const dist = Math.hypot(dx, dz) || 1
+          const want = Math.atan2(dz, dx)
+          const turn = Math.atan2(Math.sin(want - courier.heading), Math.cos(want - courier.heading))
+          courier.heading += turn * Math.min(1, step * 5.2)
+          const move = Math.min(dist, courier.speed * step)
+          courier.x += Math.cos(courier.heading) * move
+          courier.z += Math.sin(courier.heading) * move
+          const toDoor = Math.hypot(courier.x - mission.pickup.x, courier.z - mission.pickup.z)
+          if (toDoor < 3.8 && mission.phase === 'pickup') {
+            snatchMission('¡Un Rappi se llevó el pedido!')
+            courier.mode = 'haul'
+            courier.speed = 12.2
+            courier.path = nearestLoop(courier.x, courier.z)
+            courier.d = closestDistance(courier.path, courier.x, courier.z)
+            courier.racePath = []
+            courier.until = now + 16000
+            rivalId.current = -1
+            game.rival = null
+          }
+        }
+      } else if (courier.mode === 'seek' || courier.mode === 'haul') {
+        courier.d += Math.min(courier.speed * step, 0.85)
         const pose = samplePath(courier.path, courier.d)
-        courier.x = THREE.MathUtils.damp(courier.x, pose.x, 2.4, step)
-        courier.z = THREE.MathUtils.damp(courier.z, pose.z, 2.4, step)
-        const turn = Math.atan2(Math.sin(pose.heading - courier.heading), Math.cos(pose.heading - courier.heading))
-        courier.heading += turn * Math.min(1, step * 8)
-      } else {
-        courier.x = THREE.MathUtils.damp(courier.x, courier.park.x, 3.2, step)
-        courier.z = THREE.MathUtils.damp(courier.z, courier.park.z, 3.2, step)
+        const gap = Math.hypot(pose.x - courier.x, pose.z - courier.z)
+        if (gap > 18) {
+          courier.path = nearestLoop(courier.x, courier.z)
+          courier.d = closestDistance(courier.path, courier.x, courier.z)
+          const near = samplePath(courier.path, courier.d)
+          const slide = Math.min(gap, courier.speed * step)
+          const nx = near.x - courier.x
+          const nz = near.z - courier.z
+          const nd = Math.hypot(nx, nz) || 1
+          courier.x += (nx / nd) * slide
+          courier.z += (nz / nd) * slide
+        } else {
+          const slide = Math.min(gap, courier.speed * step)
+          if (gap > 0.001) {
+            courier.x += ((pose.x - courier.x) / gap) * slide
+            courier.z += ((pose.z - courier.z) / gap) * slide
+          } else {
+            courier.x = pose.x
+            courier.z = pose.z
+          }
+          const turn = Math.atan2(Math.sin(pose.heading - courier.heading), Math.cos(pose.heading - courier.heading))
+          courier.heading += turn * Math.min(1, step * 8)
+        }
+      } else if (courier.mode === 'wait') {
+        const gap = Math.hypot(courier.park.x - courier.x, courier.park.z - courier.z)
+        const slide = Math.min(gap, 8 * step)
+        if (gap > 0.001) {
+          courier.x += ((courier.park.x - courier.x) / gap) * slide
+          courier.z += ((courier.park.z - courier.z) / gap) * slide
+        }
         const turn = Math.atan2(Math.sin(courier.park.heading - courier.heading), Math.cos(courier.park.heading - courier.heading))
         courier.heading += turn * Math.min(1, step * 4)
       }
-      moverColliders.push(makeAxes(courier.heading, FILES.rappi.length * 0.92, FILES.rappi.width, courier.x, courier.z))
+      if (now >= courier.nextShout && Math.random() < 0.45) {
+        courier.shoutUntil = now + 2800
+        courier.nextShout = now + 14000 + Math.random() * 22000
+      } else if (now >= courier.nextShout) {
+        courier.nextShout = now + 8000 + Math.random() * 12000
+      }
+      if (!courier.dropping) {
+        moverColliders.push(makeAxes(courier.heading, FILES.rappi.length * 0.92, FILES.rappi.width, courier.x, courier.z))
+      }
     }
     sim.forEach((car, index) => {
       const group = refs.current[index]
@@ -328,8 +536,21 @@ export function Traffic() {
     couriers.forEach((courier, index) => {
       const group = courierRefs.current[index]
       if (!group) return
-      group.position.set(courier.x, FILES.rappi.y, courier.z)
+      group.position.set(courier.x, courier.hoverY, courier.z)
       group.rotation.y = FILES.rappi.nose - courier.heading
+      if (courier.dropping) group.rotation.y += now * 0.004
+      const shout = shoutRefs.current[index]
+      if (shout) {
+        shout.visible = performance.now() < courier.shoutUntil
+        shout.position.set(0, 2.35, 0)
+      }
+      const ring = dropRefs.current[index]
+      if (ring) {
+        ring.visible = courier.dropping
+        ring.position.y = 0.06 - courier.hoverY
+        const pulse = 1.1 + Math.sin(now * 0.012) * 0.18
+        ring.scale.set(pulse, pulse, 1)
+      }
     })
   })
 
@@ -343,6 +564,22 @@ export function Traffic() {
       {couriers.map((courier, index) => (
         <group key={`rappi-${index}`} ref={(node) => { courierRefs.current[index] = node }}>
           <VehicleModel url={FILES.rappi.url} length={FILES.rappi.length} yaw={FILES.rappi.yaw} />
+          <sprite
+            ref={(node) => { shoutRefs.current[index] = node }}
+            scale={[4.8, 2, 1]}
+            position={[0, 2.35, 0]}
+            visible={false}
+          >
+            <spriteMaterial map={shoutTex} transparent depthTest={false} />
+          </sprite>
+          <mesh
+            ref={(node) => { dropRefs.current[index] = node }}
+            rotation={[-Math.PI / 2, 0, 0]}
+            visible={false}
+          >
+            <ringGeometry args={[0.55, 1.9, 28]} />
+            <meshBasicMaterial color="#ffe56a" transparent opacity={0.78} depthWrite={false} />
+          </mesh>
         </group>
       ))}
       {city.parked.map((car, index) => (

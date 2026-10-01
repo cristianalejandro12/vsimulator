@@ -1,4 +1,4 @@
-import { city, type House } from './city'
+import { city } from './city'
 import { route } from './gps'
 import { audio } from './audio'
 
@@ -43,6 +43,17 @@ export type Pursuit = {
   speed: number
 }
 
+export type SideQuest = {
+  id: number
+  kind: 'phones' | 'tips' | 'drops'
+  emoji: string
+  title: string
+  hint: string
+  goal: number
+  progress: number
+  reward: number
+}
+
 export const QUOTA = 200000
 const QUOTA_MS = 40000
 
@@ -58,6 +69,9 @@ export type Mission = {
   deliveryFee: number
   reward: number
   phase: Phase
+  premium: boolean
+  deadline: number | null
+  contested: boolean
 }
 
 const BRANDS: Array<{ id: BrandId; name: string; color: string; items: Array<{ name: string; price: number }> }> = [
@@ -135,6 +149,8 @@ export const game = {
   shakedown: null as Shakedown | null,
   burned: [] as string[],
   burnFx: null as { id: string; until: number } | null,
+  rival: null as { x: number; z: number; toShop: number; toYou: number; dropping: boolean; kph: number } | null,
+  sideQuest: null as SideQuest | null,
 }
 
 const listeners = new Set<() => void>()
@@ -143,6 +159,12 @@ let bannerToken = 0
 let floaterToken = 0
 let noticeToken = 0
 let orderToken = 0
+let questToken = 0
+let questTimer = 0
+let phoneQuestGoal = 10
+let tipQuestGoal = 30000
+let dropQuestGoal = 5
+let lastQuestKind: SideQuest['kind'] | null = null
 
 export function subscribe(listener: () => void) {
   listeners.add(listener)
@@ -235,14 +257,152 @@ function dismissOffer() {
 export function acceptOffer() {
   const offer = game.offer
   if (!offer || game.carrying) return
-  game.mission = offer.mission
+  const mission = offer.mission
+  if (mission.premium) mission.deadline = performance.now() + 25000
+  mission.contested = Math.random() < (mission.premium ? 0.38 : 0.32)
+  game.mission = mission
   game.offer = null
   refreshRoute()
+  if (mission.contested) {
+    const away = Math.hypot(game.x - mission.pickup.x, game.z - mission.pickup.z)
+    const place = away >= 1000 ? `${(away / 1000).toFixed(1)} km` : `${Math.round(away)} m`
+    showNotice('⬇️', '¡Tienes un competidor!', `Un Rappi se tira del cielo y corre a ${mission.brandName}. El local está a ${place}.`, 'pop', 4200)
+  }
   emit()
 }
 
 export function rejectOffer() {
   dismissOffer()
+}
+
+export function snatchMission(reason: string) {
+  if (!game.mission || game.mission.phase !== 'pickup') return
+  game.mission = null
+  game.carrying = false
+  game.rival = null
+  refreshRoute()
+  showNotice('🛵', 'Te lo quitó un Rappi', reason, 'alert', 3600)
+}
+
+export function tickPremium() {
+  const mission = game.mission
+  if (!mission?.premium || mission.phase !== 'pickup' || !mission.deadline) return
+  const left = Math.ceil((mission.deadline - performance.now()) / 1000)
+  if (left !== premiumSecond) {
+    premiumSecond = left
+    emit()
+  }
+  if (performance.now() < mission.deadline) return
+  mission.deadline = null
+  premiumSecond = -1
+  emit()
+}
+
+let premiumSecond = -1
+
+export function premiumLeft() {
+  const mission = game.mission
+  if (!mission?.premium || !mission.deadline || mission.phase !== 'pickup') return 0
+  return Math.max(0, Math.ceil((mission.deadline - performance.now()) / 1000))
+}
+
+function questGap() {
+  return 14000 + Math.random() * 18000
+}
+
+function pickQuestKind(): SideQuest['kind'] {
+  const pool: SideQuest['kind'][] = ['phones', 'tips', 'drops']
+  const filtered = lastQuestKind ? pool.filter((kind) => kind !== lastQuestKind) : pool
+  return filtered[Math.floor(Math.random() * filtered.length)]
+}
+
+function makeSideQuest(kind: SideQuest['kind']): SideQuest {
+  if (kind === 'phones') {
+    const goal = phoneQuestGoal
+    return {
+      id: ++questToken,
+      kind,
+      emoji: '📱',
+      title: `Roba ${goal} celulares`,
+      hint: 'Sin que te atrape la policía',
+      goal,
+      progress: 0,
+      reward: 8000 + goal * 400,
+    }
+  }
+  if (kind === 'tips') {
+    const goal = tipQuestGoal
+    return {
+      id: ++questToken,
+      kind,
+      emoji: '💸',
+      title: `Junta ${formatClp(goal)} de propina`,
+      hint: 'Solo cuenta lo que te dejan en las casas',
+      goal,
+      progress: 0,
+      reward: 6000 + Math.round(goal * 0.12),
+    }
+  }
+  const goal = dropQuestGoal
+  return {
+    id: ++questToken,
+    kind: 'drops',
+    emoji: '🛵',
+    title: `Entrega ${goal} pedidos`,
+    hint: 'Opcional, encima de Uber',
+    goal,
+    progress: 0,
+    reward: 5000 + goal * 1500,
+  }
+}
+
+function openSideQuest() {
+  if (!game.started || game.sideQuest) return
+  const kind = pickQuestKind()
+  lastQuestKind = kind
+  game.sideQuest = makeSideQuest(kind)
+  showNotice(game.sideQuest.emoji, 'Misión opcional', game.sideQuest.title, 'pop', 3200)
+}
+
+function scheduleSideQuest(delay = questGap()) {
+  window.clearTimeout(questTimer)
+  questTimer = window.setTimeout(() => {
+    if (!game.started) return
+    if (game.sideQuest) {
+      scheduleSideQuest(6000)
+      return
+    }
+    openSideQuest()
+  }, delay)
+}
+
+function completeSideQuest() {
+  const quest = game.sideQuest
+  if (!quest) return
+  game.sideQuest = null
+  game.money += quest.reward
+  showFloater(`+ ${formatClp(quest.reward)}`)
+  if (quest.kind === 'phones') phoneQuestGoal = Math.min(40, phoneQuestGoal + 10)
+  if (quest.kind === 'tips') tipQuestGoal = Math.min(120000, Math.round(tipQuestGoal * 1.6 / 1000) * 1000)
+  if (quest.kind === 'drops') dropQuestGoal = Math.min(20, dropQuestGoal + 5)
+  showNotice(quest.emoji, '¡Misión hecha!', `Bonus ${formatClp(quest.reward)}. Luego sale una más difícil.`, 'cash', 3800)
+  scheduleSideQuest(22000 + Math.random() * 14000)
+}
+
+export function failSideQuest(_reason: string) {
+  const quest = game.sideQuest
+  if (!quest || quest.kind !== 'phones') return
+  game.sideQuest = null
+  emit()
+  scheduleSideQuest(16000 + Math.random() * 10000)
+}
+
+function bumpSideQuest(kind: SideQuest['kind'], amount: number) {
+  const quest = game.sideQuest
+  if (!quest || quest.kind !== kind) return
+  quest.progress = Math.min(quest.goal, quest.progress + amount)
+  if (quest.progress >= quest.goal) completeSideQuest()
+  else emit()
 }
 
 export function showNotice(emoji: string, title: string, text: string, tone: Notice['tone'], ms = 4400) {
@@ -353,12 +513,14 @@ function showFloater(text: string) {
   }, 1700)
 }
 
-function pickDrop(origin: { x: number; z: number }, previous?: House) {
-  const far = city.houses.filter((house) => {
-    if (previous && house.address === previous.address) return false
-    return Math.hypot(house.delivery.x - origin.x, house.delivery.z - origin.z) > 75
+function pickDrop(origin: { x: number; z: number }, previous?: { address: string }) {
+  const useBuilding = Math.random() < 0.4 && city.buildingDrops.length > 0
+  const source = useBuilding ? city.buildingDrops : city.houses
+  const far = source.filter((spot) => {
+    if (previous && spot.address === previous.address) return false
+    return Math.hypot(spot.delivery.x - origin.x, spot.delivery.z - origin.z) > 75
   })
-  const pool = far.length ? far : city.houses
+  const pool = far.length ? far : source
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
@@ -373,6 +535,8 @@ export function makeMission(previous?: Mission | null): Mission {
   const dish = brand.items[Math.floor(Math.random() * brand.items.length)]
   const dist = Math.hypot(pickup.x - drop.delivery.x, pickup.z - drop.delivery.z)
   const deliveryFee = DELIVERY_FEES[Math.min(DELIVERY_FEES.length - 1, Math.round(dist / 70))]
+  const premium = Math.random() < 0.34
+  const bonus = premium ? 2500 : 0
   return {
     id: (previous?.id ?? 0) + 1,
     brand: brand.id,
@@ -383,8 +547,11 @@ export function makeMission(previous?: Mission | null): Mission {
     drop: { x: drop.delivery.x, z: drop.delivery.z, address: drop.address },
     subtotal: dish.price,
     deliveryFee,
-    reward: dish.price + deliveryFee,
+    reward: dish.price + deliveryFee + bonus,
     phase: 'pickup',
+    premium,
+    deadline: null,
+    contested: false,
   }
 }
 
@@ -433,6 +600,7 @@ export function confiscateStolen() {
   stolenCash = 0
   phoneStreak = 0
   phoneStreakAt = 0
+  failSideQuest('Te pilló la policía. Roba de nuevo, sin que te pesquen.')
   if (taken > 0) showFloater(`- ${formatClp(taken)}`)
   else emit()
   return { taken, phones }
@@ -446,8 +614,12 @@ export function stealPhone() {
   game.money += 400000
   stolenCash += 400000
   showFloater(`+ ${formatClp(400000)}`)
-  const title = phoneStreak === 1 ? 'Has robado un celular' : `Has robado ${phoneStreak} celulares`
-  showNotice('📱', title, 'Corre antes de que llamen a la policía.', 'pop', 3600)
+  const finishing = game.sideQuest?.kind === 'phones' && game.sideQuest.progress + 1 >= game.sideQuest.goal
+  if (!finishing) {
+    const title = phoneStreak === 1 ? 'Has robado un celular' : `Has robado ${phoneStreak} celulares`
+    showNotice('📱', title, 'Corre antes de que llamen a la policía.', 'pop', 3600)
+  }
+  bumpSideQuest('phones', 1)
   if (!game.pursuit) {
     game.pursuit = {
       phase: 'delay',
@@ -507,23 +679,47 @@ export function tryInteract() {
   if (mission && target && Math.hypot(game.x - target.x, game.z - target.z) <= 6.4) {
     if (mission.phase === 'pickup') {
       mission.phase = 'deliver'
+      mission.deadline = null
+      mission.contested = false
+      premiumSecond = -1
+      game.rival = null
       game.carrying = true
-      showNotice('🍔', 'Recogiste un pedido', `${mission.item}. Llévalo a la casa.`, 'pop', 3600)
+      showNotice(
+        mission.premium ? '🔥' : '🍔',
+        mission.premium ? 'Premium recogido' : 'Recogiste un pedido',
+        `${mission.item}. Llévalo a la casa.`,
+        'pop',
+        3600,
+      )
       refreshRoute()
       return
     }
 
-    const tip = Math.random() < 0.5 ? 0 : [1000, 2000, 3000][Math.floor(Math.random() * 3)]
+    const tipPool = mission.premium ? [2000, 3000, 4000, 5000] : [1000, 2000, 3000]
+    const tip = mission.premium
+      ? tipPool[Math.floor(Math.random() * tipPool.length)]
+      : Math.random() < 0.5
+        ? 0
+        : tipPool[Math.floor(Math.random() * tipPool.length)]
     game.carrying = false
     game.mission = null
+    game.rival = null
+    premiumSecond = -1
     refreshRoute()
     if (tip > 0) {
       game.money += tip
       showFloater(`+ ${formatClp(tip)}`)
-      showNotice('🏠', 'Entregaste el pedido', `Te dieron propina de ${formatClp(tip)}.`, 'cash', 3600)
-    } else {
-      showNotice('🏠', 'Entregaste el pedido', 'No te dieron propina.', 'pop', 3600)
     }
+    const quest = game.sideQuest
+    const finishing =
+      (quest?.kind === 'drops' && quest.progress + 1 >= quest.goal) ||
+      (quest?.kind === 'tips' && tip > 0 && quest.progress + tip >= quest.goal)
+    if (!finishing) {
+      if (tip > 0) showNotice('🏠', 'Entregaste el pedido', `Te dieron propina de ${formatClp(tip)}.`, 'cash', 3600)
+      else showNotice('🏠', 'Entregaste el pedido', 'No te dieron propina.', 'pop', 3600)
+    }
+    if (tip > 0) bumpSideQuest('tips', tip)
+    bumpSideQuest('drops', 1)
     return
   }
   tryVenue()
@@ -534,8 +730,14 @@ export function startShift() {
   game.started = true
   game.mission = null
   game.path = []
+  game.sideQuest = null
+  phoneQuestGoal = 10
+  tipQuestGoal = 30000
+  dropQuestGoal = 5
+  lastQuestKind = null
   emit()
   scheduleOffers(2200)
+  scheduleSideQuest(9000)
 }
 
 export function toggleMute() {

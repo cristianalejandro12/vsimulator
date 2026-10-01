@@ -74,6 +74,11 @@ export type House = {
   delivery: { x: number; z: number }
 }
 
+export type BuildingDrop = {
+  address: string
+  delivery: { x: number; z: number }
+}
+
 export type Venue = {
   id: string
   name: string
@@ -176,6 +181,7 @@ export type City = {
   signs: PlaceSign[]
   props: CityProp[]
   landmarks: Landmark[]
+  buildingDrops: BuildingDrop[]
   colliders: Collider[]
   restaurants: Restaurant[]
   lanes: Lane[]
@@ -232,6 +238,7 @@ export function createCity(): City {
     signs: [],
     props: [],
     landmarks: [],
+    buildingDrops: [],
     colliders: [],
     restaurants: [],
     lanes: [],
@@ -876,6 +883,10 @@ function addTower(
     }
   }
   city.flags.push({ x: x - w / 2 - 0.4, z: z - d / 2 - 0.6, rot: 0.3 })
+  city.buildingDrops.push({
+    address: `Torre ${ix}${iz} · puerta`,
+    delivery: { x, z: z - d / 2 - 4.2 },
+  })
 }
 
 function addChile(city: City) {
@@ -962,6 +973,12 @@ function addChile(city: City) {
     [6, 7, 7, '#f0ebe4', '#7a5340'],
     [1, 0, 5, '#f7f4ee', '#6b5344'],
     [5, 6, 8, '#e6edf6', '#45586f'],
+    [2, 2, 9, '#eef2f8', '#51667e'],
+    [4, 4, 6, '#f4efe6', '#6b5344'],
+    [6, 5, 10, '#dce5f0', '#384a60'],
+    [7, 7, 8, '#f2ebe3', '#6b5344'],
+    [0, 4, 7, '#f7f4ee', '#5a6e86'],
+    [3, 3, 11, '#d5e0ee', '#2c3c52'],
   ] as const) {
     addTower(city, spot[0], spot[1], spot[2], spot[3], spot[4])
   }
@@ -1007,15 +1024,42 @@ function addProps(city: City) {
     ['panel', 5, 2],
     ['pizza', 7, 4],
     ['pizza', 1, 3],
+    ['horizon', 1, 6],
+    ['horizon', 4, 3],
+    ['horizon', 6, 0],
+    ['horizon', 7, 5],
+    ['panel', 0, 6],
+    ['panel', 2, 2],
+    ['panel', 3, 5],
+    ['panel', 5, 4],
+    ['pizza', 0, 2],
+    ['pizza', 5, 7],
+    ['pizza', 6, 1],
+    ['horizon', 3, 7],
+    ['panel', 7, 3],
   ]
+  const names: Record<PropKind, string> = {
+    horizon: 'Horizon Heights',
+    panel: 'Panel Tower',
+    pizza: 'Pizza Hut',
+  }
   spots.forEach(([kind, ix, iz], index) => {
     const center = blockCenter(ix, iz)
+    const yaw = kind === 'pizza' ? Math.PI : index % 2 === 0 ? 0 : Math.PI
     city.props.push({
       id: `${kind}-${index}`,
       kind,
       x: center.x,
       z: center.z,
-      yaw: kind === 'pizza' ? Math.PI : index % 2 === 0 ? 0 : Math.PI,
+      yaw,
+    })
+    const depth = kind === 'pizza' ? 14 : kind === 'horizon' ? 14 : 12
+    city.buildingDrops.push({
+      address: `${names[kind]} · puerta`,
+      delivery: {
+        x: center.x + Math.sin(yaw) * (depth * 0.5 + 3.8),
+        z: center.z + Math.cos(yaw) * (depth * 0.5 + 3.8),
+      },
     })
   })
 }
@@ -1024,6 +1068,10 @@ function addLandmarks(city: City) {
   const costanera = blockCenter(4, 2)
   const entel = blockCenter(7, 1)
   city.landmarks.push({ id: 'costanera', x: costanera.x, z: costanera.z }, { id: 'entel', x: entel.x, z: entel.z })
+  city.buildingDrops.push(
+    { address: 'Costanera Center · puerta', delivery: { x: costanera.x, z: costanera.z + 16 } },
+    { address: 'Torre Entel · puerta', delivery: { x: entel.x, z: entel.z + 9 } },
+  )
 }
 
 function addFiesta(city: City) {

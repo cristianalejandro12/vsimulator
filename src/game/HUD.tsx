@@ -3,7 +3,7 @@ import { useProgress } from '@react-three/drei'
 import { city } from './city'
 import { nearbyPhones } from './Phones'
 import { bootAudioAndShift } from './Player'
-import { acceptOffer, clockLabel, formatClp, game, getVersion, rejectOffer, subscribe, tickExtortion } from './store'
+import { acceptOffer, clockLabel, formatClp, game, getVersion, premiumLeft, rejectOffer, subscribe, tickExtortion, tickPremium } from './store'
 
 export function HUD() {
   const version = useSyncExternalStore(subscribe, getVersion, getVersion)
@@ -13,6 +13,9 @@ export function HUD() {
   const etaRef = useRef<HTMLSpanElement>(null)
   const mapRef = useRef<HTMLCanvasElement>(null)
   const clockRef = useRef<HTMLSpanElement>(null)
+  const timerRef = useRef<HTMLSpanElement>(null)
+  const rivalShopRef = useRef<HTMLSpanElement>(null)
+  const rivalYouRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -52,7 +55,18 @@ export function HUD() {
       }
       if (etaRef.current) etaRef.current.textContent = `${Math.max(4, Math.round(game.distance / 22))} min`
       if (clockRef.current) clockRef.current.textContent = clockLabel()
+      if (timerRef.current) {
+        const left = premiumLeft()
+        timerRef.current.textContent = left > 0 ? `0:${String(left).padStart(2, '0')}` : ''
+      }
+      if (game.rival) {
+        const shop = game.rival.toShop >= 1000 ? `${(game.rival.toShop / 1000).toFixed(1)} km` : `${Math.round(game.rival.toShop)} m`
+        const you = game.rival.toYou >= 1000 ? `${(game.rival.toYou / 1000).toFixed(1)} km` : `${Math.round(game.rival.toYou)} m`
+        if (rivalShopRef.current) rivalShopRef.current.textContent = shop
+        if (rivalYouRef.current) rivalYouRef.current.textContent = you
+      }
       tickExtortion()
+      tickPremium()
       drawMap(ctx, canvas.width, canvas.height)
     }
     frame = requestAnimationFrame(loop)
@@ -74,11 +88,14 @@ export function HUD() {
       </div>
 
       {mission && mission.phase !== 'cooldown' && (
-        <div className="offer ticket">
+        <div className={`offer ticket${mission.premium ? ' ticket-hot' : ''}`}>
           <div className="offer-head">
             <div className="offer-mark" style={{ background: mission.color }}>{mission.brandName.slice(0, 1)}</div>
             <div>
-              <div className="offer-name">{mission.brandName}</div>
+              <div className="offer-name">
+                {mission.brandName}
+                {mission.premium && <em className="premium-tag">Premium</em>}
+              </div>
               <p>1 × {mission.item}</p>
             </div>
             <strong className="offer-price">{formatClp(mission.reward)}</strong>
@@ -87,12 +104,15 @@ export function HUD() {
             <span>{objective}</span>
             <span ref={etaRef}>8 min</span>
             <span ref={distRef}>0 m</span>
+            {mission.premium && mission.phase === 'pickup' && (
+              <span className="premium-clock" ref={timerRef}>0:25</span>
+            )}
           </div>
           <div className="offer-route">
             <div className={`offer-stop${mission.phase === 'pickup' ? '' : ' offer-dim'}`}>
               <i />
               <div>
-                <strong>{mission.phase === 'pickup' ? 'Ahora' : 'Recogido'}</strong>
+                <strong>{mission.phase === 'pickup' ? (mission.premium ? '¡Corre al local!' : 'Ahora') : 'Recogido'}</strong>
                 <p>{mission.brandName}</p>
               </div>
             </div>
@@ -113,55 +133,115 @@ export function HUD() {
       </div>
 
       <canvas ref={mapRef} className="minimap" />
-      {game.offer && (
-        <div key={game.offer.id} className="offer">
-          <div className="offer-head">
-            <div className="offer-mark" style={{ background: game.offer.mission.color }}>
-              {game.offer.mission.brandName.slice(0, 1)}
+      <div className="job-stack">
+        {game.sideQuest && (
+          <div key={game.sideQuest.id} className="side-quest">
+            <div className="side-quest-top">
+              <span>Opcional</span>
+              <em>{formatClp(game.sideQuest.reward)}</em>
             </div>
-            <div>
-              <div className="offer-name">{game.offer.mission.brandName}</div>
-              <p>1 × {game.offer.mission.item}</p>
-            </div>
-            <strong className="offer-price">{formatClp(game.offer.mission.reward)}</strong>
-          </div>
-          <div className="offer-meta">
-            <span>★ {game.offer.rating}</span>
-            <span>✓ Verificado</span>
-          </div>
-          <div className="offer-route">
-            <div className="offer-stop">
-              <i />
+            <div className="side-quest-row">
+              <b>{game.sideQuest.emoji}</b>
               <div>
-                <strong>{game.offer.pickupMin} min ({game.offer.pickupDist})</strong>
-                <p>{game.offer.mission.brandName}</p>
+                <strong>{game.sideQuest.title}</strong>
+                <p>{game.sideQuest.hint}</p>
               </div>
             </div>
-            <div className="offer-stop">
-              <i className="sq" />
+            <div className="side-bar">
+              <i style={{ width: `${Math.round((game.sideQuest.progress / game.sideQuest.goal) * 100)}%` }} />
+            </div>
+            <small>
+              {game.sideQuest.kind === 'tips'
+                ? `${formatClp(game.sideQuest.progress)} / ${formatClp(game.sideQuest.goal)}`
+                : `${game.sideQuest.progress} / ${game.sideQuest.goal}`}
+            </small>
+          </div>
+        )}
+        {game.offer && (
+          <div key={game.offer.id} className="offer">
+            <div className="offer-head">
+              <div className="offer-mark" style={{ background: game.offer.mission.color }}>
+                {game.offer.mission.brandName.slice(0, 1)}
+              </div>
               <div>
-                <strong>{game.offer.tripMin} min ({game.offer.tripDist}) de viaje</strong>
-                <p>{game.offer.mission.drop.address}</p>
+                <div className="offer-name">
+                  {game.offer.mission.brandName}
+                  {game.offer.mission.premium && <em className="premium-tag">Premium</em>}
+                </div>
+                <p>1 × {game.offer.mission.item}</p>
+              </div>
+              <strong className="offer-price">{formatClp(game.offer.mission.reward)}</strong>
+            </div>
+            <div className="offer-meta">
+              <span>★ {game.offer.rating}</span>
+              <span>✓ Verificado</span>
+            </div>
+            <div className="offer-route">
+              <div className="offer-stop">
+                <i />
+                <div>
+                  <strong>{game.offer.pickupMin} min ({game.offer.pickupDist})</strong>
+                  <p>{game.offer.mission.brandName}</p>
+                </div>
+              </div>
+              <div className="offer-stop">
+                <i className="sq" />
+                <div>
+                  <strong>{game.offer.tripMin} min ({game.offer.tripDist}) de viaje</strong>
+                  <p>{game.offer.mission.drop.address}</p>
+                </div>
+              </div>
+            </div>
+            <button type="button" className="offer-accept" disabled={game.carrying} onClick={acceptOffer}>
+              {game.carrying ? 'Termina este pedido' : 'Aceptar'}
+              {!game.carrying && <small>Enter</small>}
+            </button>
+            <button
+              type="button"
+              className="offer-reject"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                rejectOffer()
+              }}
+            >
+              Rechazar <small>Esc</small>
+            </button>
+          </div>
+        )}
+        {game.mission && game.mission.contested && game.mission.phase === 'pickup' && (
+          <div className={`rival-card ${game.rival?.dropping ? 'rival-drop' : ''}`}>
+            <div className="rival-pop">{game.rival?.dropping ? '⬇️ ¡Cayó adelante tuyo!' : '🛵 Tienes un competidor'}</div>
+            <div className="offer-head">
+              <div className="offer-mark" style={{ background: '#ff4d1a' }}>R</div>
+              <div>
+                <div className="offer-name">Rappi</div>
+                <p>
+                  {game.rival?.dropping
+                    ? 'Se tira del cielo, adelante'
+                    : `Va a ${game.mission.brandName} a ${game.rival?.kph ?? 60} km/h`}
+                </p>
+              </div>
+            </div>
+            <div className="offer-route">
+              <div className="offer-stop">
+                <i />
+                <div>
+                  <strong>Del local <span ref={rivalShopRef}>—</span></strong>
+                  <p>Si llega antes, se lleva el pedido</p>
+                </div>
+              </div>
+              <div className="offer-stop">
+                <i className="sq" />
+                <div>
+                  <strong>De ti <span ref={rivalYouRef}>—</span></strong>
+                  <p>Sigue el GPS 🛵</p>
+                </div>
               </div>
             </div>
           </div>
-          <button type="button" className="offer-accept" disabled={game.carrying} onClick={acceptOffer}>
-            {game.carrying ? 'Termina este pedido' : 'Aceptar'}
-            {!game.carrying && <small>Enter</small>}
-          </button>
-          <button
-            type="button"
-            className="offer-reject"
-            onPointerDown={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              rejectOffer()
-            }}
-          >
-            Rechazar <small>Esc</small>
-          </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {game.notice && (
         <div key={game.notice.id} className={`notice notice-${game.notice.tone}`}>
@@ -379,6 +459,11 @@ function drawMap(ctx: CanvasRenderingContext2D, width: number, height: number) {
     const cop = clampIcon(project(game.pursuit.x, game.pursuit.z, width, height, scale), width, height)
     ctx.font = `${Math.round(width / 8)}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`
     drawOutlinedEmoji(ctx, '🚓', cop.x, cop.y, Math.max(3, width / 80))
+  }
+  if (game.rival) {
+    const rival = clampIcon(project(game.rival.x, game.rival.z, width, height, scale), width, height)
+    ctx.font = `${Math.round(width / 9)}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`
+    drawOutlinedEmoji(ctx, '🛵', rival.x, rival.y, Math.max(3, width / 80))
   }
   ctx.restore()
 
