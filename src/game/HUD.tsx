@@ -32,6 +32,7 @@ export function HUD() {
       if (event.code === 'Enter') {
         if (!game.started) bootAudioAndShift()
         else if (game.cartelTalk) acceptCartel()
+        else if (game.stashOffer && game.offer) return
         else if (game.stashOffer) acceptStash()
         else if (game.offer) acceptOffer()
       }
@@ -47,6 +48,8 @@ export function HUD() {
           event.preventDefault()
           event.stopPropagation()
           refuseCartel()
+        } else if (game.stashOffer && game.offer) {
+          return
         } else if (game.stashOffer) {
           event.preventDefault()
           event.stopPropagation()
@@ -164,7 +167,7 @@ export function HUD() {
 
   return (
     <div className="hud">
-      <div className="top-left">
+      <div className="top-right">
         <div className="wallet">
           <div className="cash">
             <span>CLP</span>
@@ -185,15 +188,15 @@ export function HUD() {
             <div className="offer-mark" style={{ background: '#143018', color: '#7cff6a' }}>📦</div>
             <div>
               <div className="offer-name">
-                La Pista
-                <em>Encargo</em>
+                Encargo
+                <em>{stash.kg} kg</em>
               </div>
-              <p>{stash.kg} kg</p>
+              <p className="offer-tiny">Recolecta el pedido y luego dejalo</p>
             </div>
             <strong className="offer-price">{formatClp(stash.reward)}</strong>
           </div>
           <div className="offer-meta">
-            <span>{stash.phase === 'pickup' ? 'Recoge el paquete' : 'Entrégalo en la casa'}</span>
+            <span>{stash.phase === 'pickup' ? 'Recoger' : 'Dejarlo'}</span>
             <span ref={etaRef}>8 min</span>
             <span ref={distRef}>0 m</span>
           </div>
@@ -202,7 +205,7 @@ export function HUD() {
               <i />
               <div>
                 <strong>{stash.phase === 'pickup' ? 'Ahora' : 'Recogido'}</strong>
-                <p>La Pista</p>
+                <p>Pedido</p>
               </div>
             </div>
             <div className={`offer-stop${stash.phase === 'drop' ? '' : ' offer-dim'}`}>
@@ -285,83 +288,32 @@ export function HUD() {
       </div>
 
       <canvas ref={mapRef} className="minimap" />
-      <div className="job-stack">
-        {game.cartelTalk && (
-          <div className="offer narco">
-            <div className="offer-head">
-              <div className="offer-mark" style={{ background: '#143018', color: '#7cff6a' }}>🟢</div>
-              <div>
-                <div className="offer-name">La Pista</div>
-                <p>Hay un encargo, pero primero hay que entrar</p>
-              </div>
-            </div>
-            <div className="offer-meta">
-              <span>¿Quieres ser del Tren de Aragua?</span>
-            </div>
+      {game.cartelTalk && (
+        <div className="narco-ask">
+          <div className="narco-ask-card">
+            <span className="narco-ask-ico">💀</span>
+            <h2>¿Quieres ser del Tren de Aragua?</h2>
+            <p>Si entras, te van a mandar encargos. Si no, sigues normal.</p>
             <button type="button" className="offer-accept narco-yes" onClick={acceptCartel}>
-              Sí <small>Enter</small>
+              Aceptar <small>Enter</small>
             </button>
             <button
               type="button"
-              className="offer-reject"
+              className="offer-reject narco-no"
               onPointerDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
                 refuseCartel()
               }}
             >
-              No <small>Esc</small>
+              Cancelar <small>Esc</small>
             </button>
           </div>
-        )}
-        {game.stashOffer && (
-          <div key={game.stashOffer.id} className="offer narco">
-            <div className="offer-head">
-              <div className="offer-mark" style={{ background: '#143018', color: '#7cff6a' }}>📦</div>
-              <div>
-                <div className="offer-name">
-                  Encargo
-                  <em>{game.stashOffer.kg} kg</em>
-                </div>
-                <p>Recoge en La Pista y deja en la casa</p>
-              </div>
-              <strong className="offer-price">{formatClp(game.stashOffer.reward)}</strong>
-            </div>
-            <div className="offer-route">
-              <div className="offer-stop">
-                <i />
-                <div>
-                  <strong>La Pista</strong>
-                  <p>Paquete blanco</p>
-                </div>
-              </div>
-              <div className="offer-stop">
-                <i className="sq" />
-                <div>
-                  <strong>{game.stashOffer.drop.address}</strong>
-                  <p>Entrega</p>
-                </div>
-              </div>
-            </div>
-            <button type="button" className="offer-accept narco-yes" disabled={!!game.carrying} onClick={acceptStash}>
-              {game.carrying ? 'Termina este pedido' : 'Aceptar'}
-              {!game.carrying && <small>Enter</small>}
-            </button>
-            <button
-              type="button"
-              className="offer-reject"
-              onPointerDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                rejectStash()
-              }}
-            >
-              Rechazar <small>Esc</small>
-            </button>
-          </div>
-        )}
+        </div>
+      )}
+      <div className="job-stack">
         {game.sideQuest && (
-          <div key={game.sideQuest.id} className="offer">
+          <div className="offer">
             <div className="offer-head">
               <div className="offer-mark" style={{ background: '#111', color: '#fff' }}>{game.sideQuest.emoji}</div>
               <div>
@@ -401,7 +353,7 @@ export function HUD() {
               </div>
             </div>
             <div className="side-bar">
-              <i style={{ width: `${Math.round((game.sideQuest.progress / game.sideQuest.goal) * 100)}%` }} />
+              <i style={{ width: `${Math.round((game.sideQuest.progress / Math.max(1, game.sideQuest.goal)) * 100)}%` }} />
             </div>
           </div>
         )}
@@ -440,9 +392,14 @@ export function HUD() {
                 </div>
               </div>
             </div>
-            <button type="button" className="offer-accept" disabled={game.carrying} onClick={acceptOffer}>
-              {game.carrying ? 'Termina este pedido' : 'Aceptar'}
-              {!game.carrying && <small>Enter</small>}
+            <button
+              type="button"
+              className="offer-accept"
+              disabled={!!(game.carrying || game.stash || game.mission)}
+              onClick={acceptOffer}
+            >
+              {game.stash || game.mission || game.carrying ? 'Termina este pedido' : 'Aceptar'}
+              {!(game.stashOffer || game.carrying || game.stash || game.mission) && <small>Enter</small>}
             </button>
             <button
               type="button"
@@ -451,6 +408,57 @@ export function HUD() {
                 event.preventDefault()
                 event.stopPropagation()
                 rejectOffer()
+              }}
+            >
+              Rechazar <small>Esc</small>
+            </button>
+          </div>
+        )}
+        {game.stashOffer && (
+          <div key={game.stashOffer.id} className="offer narco">
+            <div className="offer-head">
+              <div className="offer-mark" style={{ background: '#143018', color: '#7cff6a' }}>📦</div>
+              <div>
+                <div className="offer-name">
+                  Encargo
+                  <em>{game.stashOffer.kg} kg</em>
+                </div>
+                <p className="offer-tiny">Recolecta el pedido y luego dejalo</p>
+              </div>
+              <strong className="offer-price">{formatClp(game.stashOffer.reward)}</strong>
+            </div>
+            <div className="offer-route">
+              <div className="offer-stop">
+                <i />
+                <div>
+                  <strong>Pedido</strong>
+                  <p>Recolectar</p>
+                </div>
+              </div>
+              <div className="offer-stop">
+                <i className="sq" />
+                <div>
+                  <strong>{game.stashOffer.drop.address}</strong>
+                  <p>Entrega</p>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="offer-accept narco-yes"
+              disabled={!!(game.carrying || game.mission || game.stash)}
+              onClick={acceptStash}
+            >
+              {game.mission || game.stash || game.carrying ? 'Termina este pedido' : 'Aceptar'}
+              {!(game.offer || game.carrying || game.mission || game.stash) && <small>Enter</small>}
+            </button>
+            <button
+              type="button"
+              className="offer-reject"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                rejectStash()
               }}
             >
               Rechazar <small>Esc</small>
@@ -563,7 +571,6 @@ export function HUD() {
             <span>★★★★★★★★</span>
           </div>
           <div className="menu-pop">
-            <p className="eyebrow">Venezuela</p>
             <h1>Yonaiker<br />Simulator</h1>
             <p className="menu-start">Pulsa Enter</p>
           </div>
@@ -906,7 +913,7 @@ export function Loader() {
   return (
     <div className="loader">
       <div>
-        <p className="eyebrow">🇻🇪 Yonaiker</p>
+        <p className="eyebrow">Yonaiker</p>
         <h1>Simulator</h1>
         <div className="bar">
           <div style={{ width: `${Math.round(progress)}%` }} />

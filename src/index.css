@@ -8,7 +8,7 @@ body {
 button, kbd { font-family: inherit; }
 
 .hud { position: fixed; inset: 0; pointer-events: none; }
-.hud button, .menu, .offer:not(.ticket), .big-map { pointer-events: auto; }
+.hud button, .menu, .offer:not(.ticket), .big-map, .narco-ask { pointer-events: auto; }
 
 .stroke, .cash strong, .speedo span, .prompt, .floater, .menu-card h1, .menu-card button, .loader h1, .banner, .wanted {
   text-shadow:
@@ -18,7 +18,9 @@ button, kbd { font-family: inherit; }
     0 -1px 0 #1a1a1a;
 }
 
-.top-left { position: absolute; top: 14px; left: 14px; display: flex; flex-direction: column; gap: 8px; }
+.top-left, .top-right { position: absolute; top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.top-left { left: 14px; }
+.top-right { right: 14px; align-items: flex-end; z-index: 43; }
 .cash, .banner, .speedo, .prompt, .menu-card, .loader, .quiet-load {
   background: rgba(18, 20, 28, 0.5);
   border: 3px solid #fff;
@@ -88,7 +90,7 @@ button, kbd { font-family: inherit; }
 .notice-cash strong, .notice-fire strong { color: #1a1a1a; font-size: 34px; }
 .notice-cash p, .notice-fire p { color: #1a1a1a; font-size: 20px; font-weight: 700; }
 .quota {
-  position: absolute; top: 14px; right: 14px; width: 220px;
+  position: absolute; top: 118px; right: 14px; width: 220px;
   padding: 12px 14px 14px; border-radius: 22px; background: #ffe56a; color: #1a1a1a;
   border: 5px solid #1a1a1a; box-shadow: 0 8px 0 #1a1a1a, 7px 12px 0 #ff4d8d;
   animation: quota-in 0.45s cubic-bezier(0.2, 0.9, 0.2, 1);
@@ -97,7 +99,7 @@ button, kbd { font-family: inherit; }
 .quota strong { display: block; font-size: 40px; line-height: 1; margin-top: 2px; }
 .quota p { margin: 4px 0 0; font-size: 15px; font-weight: 700; }
 .quota-hot { background: #ff5a36; box-shadow: 0 8px 0 #1a1a1a, 7px 12px 0 #ffe56a; animation: quota-hot 0.7s ease-in-out infinite; }
-.quota-lower { top: 148px; }
+.quota-lower { top: 252px; }
 .daychip {
   align-self: flex-start; padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 13px;
   background: #7eb6e8; color: #1a1a1a; border: 3px solid #1a1a1a; box-shadow: 0 3px 0 #1a1a1a;
@@ -125,6 +127,13 @@ button, kbd { font-family: inherit; }
   78% { opacity: 1; transform: translate(-50%, 0) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -12px) scale(0.98); }
 }
+.offer-tiny {
+  margin: 2px 0 0 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  color: #8a8a8a !important;
+}
 
 .offer.ticket {
   position: absolute; top: 14px; bottom: auto; left: 50%; width: 280px;
@@ -143,6 +152,8 @@ button, kbd { font-family: inherit; }
 }
 .offer.ticket.ticket-narco .offer-head p,
 .offer.ticket.ticket-narco .offer-stop p { color: #9aa; }
+.offer.ticket.ticket-narco .offer-tiny,
+.offer.narco .offer-tiny { color: #8a8a8a !important; }
 .offer.narco {
   background: #111;
   color: #f4f7fb;
@@ -153,6 +164,38 @@ button, kbd { font-family: inherit; }
 .offer.narco .offer-route::before { background: #3dff78; }
 .offer.narco .offer-stop i { background: #3dff78; }
 .narco-yes { background: #3dff78 !important; color: #143018 !important; }
+.narco-ask {
+  position: absolute; inset: 0; z-index: 65;
+  display: grid; place-items: center;
+  background: rgba(6, 5, 5, 0.62);
+}
+.narco-ask-card {
+  width: min(420px, calc(100% - 36px));
+  padding: 22px 22px 16px;
+  border-radius: 24px;
+  background: #111;
+  color: #f4f7fb;
+  text-align: center;
+  border: 5px solid #1a1a1a;
+  box-shadow: 0 12px 0 #1a1a1a, 10px 16px 0 #3dff78;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  animation: quota-in 0.4s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.narco-ask-ico { display: block; font-size: 48px; line-height: 1; margin-bottom: 8px; }
+.narco-ask-card h2 {
+  margin: 0; font-size: 26px; font-weight: 800; line-height: 1.15; color: #fff;
+}
+.narco-ask-card p {
+  margin: 10px 0 16px; color: #b8b8b8; font-size: 16px; font-weight: 650; line-height: 1.3;
+}
+.narco-ask-card .offer-accept,
+.narco-ask-card .offer-reject {
+  width: 100%;
+  margin: 0;
+}
+.narco-ask-card .offer-accept { height: 48px; font-size: 20px; }
+.narco-ask-card .offer-reject { margin-top: 8px; }
+.narco-no { color: #ddd !important; font-size: 16px !important; }
 .wait-uber {
   display: flex; align-items: center; gap: 14px;
   margin: 4px 0 2px; padding: 12px 8px 4px;
@@ -306,9 +349,7 @@ button, kbd { font-family: inherit; }
 }
 .menu-ve { margin: 0; font-size: clamp(64px, 14vw, 120px); line-height: 1; filter: drop-shadow(0 6px 0 #1a1a1a); }
 .menu-pop .eyebrow {
-  display: inline-block; margin: 6px 0 0; padding: 4px 12px; border-radius: 999px;
-  background: #fff; color: #1a1a1a; font-size: 14px; font-weight: 800;
-  border: 3px solid #1a1a1a; box-shadow: 0 4px 0 #1a1a1a;
+  display: none;
 }
 .menu-pop h1 {
   margin: 8px 0 10px; font-size: clamp(40px, 9vw, 72px); font-weight: 800; line-height: 0.92;
