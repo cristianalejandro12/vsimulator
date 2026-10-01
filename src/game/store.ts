@@ -259,7 +259,7 @@ export function acceptOffer() {
   if (!offer || game.carrying) return
   const mission = offer.mission
   if (mission.premium) mission.deadline = performance.now() + 25000
-  mission.contested = Math.random() < (mission.premium ? 0.38 : 0.32)
+  mission.contested = Math.random() < (mission.premium ? 0.82 : 0.72)
   game.mission = mission
   game.offer = null
   refreshRoute()
@@ -678,19 +678,26 @@ export function tryInteract() {
   const target = mission && mission.phase !== 'cooldown' ? (mission.phase === 'pickup' ? mission.pickup : mission.drop) : null
   if (mission && target && Math.hypot(game.x - target.x, game.z - target.z) <= 6.4) {
     if (mission.phase === 'pickup') {
+      const beatRival = mission.contested
       mission.phase = 'deliver'
       mission.deadline = null
       mission.contested = false
       premiumSecond = -1
       game.rival = null
       game.carrying = true
-      showNotice(
-        mission.premium ? '🔥' : '🍔',
-        mission.premium ? 'Premium recogido' : 'Recogiste un pedido',
-        `${mission.item}. Llévalo a la casa.`,
-        'pop',
-        3600,
-      )
+      if (beatRival) {
+        game.money += 10000
+        showFloater(`+ ${formatClp(10000)}`)
+        showNotice('🏁', '¡Le ganaste a tu competidor!', `Te dimos ${formatClp(10000)}. Llévalo a la casa.`, 'cash', 3800)
+      } else {
+        showNotice(
+          mission.premium ? '🔥' : '🍔',
+          mission.premium ? 'Premium recogido' : 'Recogiste un pedido',
+          `${mission.item}. Llévalo a la casa.`,
+          'pop',
+          3600,
+        )
+      }
       refreshRoute()
       return
     }

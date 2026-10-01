@@ -208,34 +208,51 @@ type Courier = {
 
 function vainaBubble() {
   const canvas = document.createElement('canvas')
-  canvas.width = 1024
-  canvas.height = 420
+  canvas.width = 768
+  canvas.height = 288
   const ctx = canvas.getContext('2d')
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = 8
   if (!ctx) return texture
-  ctx.clearRect(0, 0, 1024, 420)
+  ctx.clearRect(0, 0, 768, 288)
+  ctx.fillStyle = '#ff4d8d'
+  ctx.beginPath()
+  ctx.roundRect(28, 22, 712, 188, 36)
+  ctx.fill()
   ctx.fillStyle = '#1a1a1a'
   ctx.beginPath()
-  ctx.roundRect(18, 18, 988, 300, 48)
+  ctx.roundRect(16, 10, 712, 188, 36)
   ctx.fill()
   ctx.fillStyle = '#ffe56a'
   ctx.beginPath()
-  ctx.roundRect(36, 36, 952, 264, 38)
+  ctx.roundRect(28, 22, 688, 164, 28)
   ctx.fill()
   ctx.fillStyle = '#1a1a1a'
   ctx.beginPath()
-  ctx.moveTo(430, 300)
-  ctx.lineTo(512, 400)
-  ctx.lineTo(594, 300)
+  ctx.moveTo(348, 186)
+  ctx.lineTo(384, 248)
+  ctx.lineTo(420, 186)
   ctx.fill()
-  ctx.fillStyle = '#1a1a1a'
+  ctx.fillStyle = '#ffe56a'
+  ctx.beginPath()
+  ctx.moveTo(356, 176)
+  ctx.lineTo(384, 228)
+  ctx.lineTo(412, 176)
+  ctx.fill()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.font = '800 52px Fredoka, "Trebuchet MS", sans-serif'
-  ctx.fillText('es mucha la vaina', 512, 120)
-  ctx.font = '800 58px Fredoka, "Trebuchet MS", sans-serif'
-  ctx.fillText('marico !!!!!!!!', 512, 198)
+  ctx.lineJoin = 'round'
+  ctx.strokeStyle = '#1a1a1a'
+  ctx.fillStyle = '#1a1a1a'
+  ctx.lineWidth = 10
+  ctx.font = '800 42px Fredoka, "Trebuchet MS", sans-serif'
+  ctx.strokeText('es mucha la vaina', 372, 78)
+  ctx.fillText('es mucha la vaina', 372, 78)
+  ctx.font = '800 48px Fredoka, "Trebuchet MS", sans-serif'
+  ctx.fillStyle = '#ff4d1a'
+  ctx.strokeText('marico !!!!!!!!', 372, 132)
+  ctx.fillText('marico !!!!!!!!', 372, 132)
   texture.needsUpdate = true
   return texture
 }
@@ -516,11 +533,11 @@ export function Traffic() {
         const turn = Math.atan2(Math.sin(courier.park.heading - courier.heading), Math.cos(courier.park.heading - courier.heading))
         courier.heading += turn * Math.min(1, step * 4)
       }
-      if (now >= courier.nextShout && Math.random() < 0.45) {
-        courier.shoutUntil = now + 2800
-        courier.nextShout = now + 14000 + Math.random() * 22000
+      if (now >= courier.nextShout && Math.random() < 0.7) {
+        courier.shoutUntil = now + 2400
+        courier.nextShout = now + 7000 + Math.random() * 10000
       } else if (now >= courier.nextShout) {
-        courier.nextShout = now + 8000 + Math.random() * 12000
+        courier.nextShout = now + 4000 + Math.random() * 7000
       }
       if (!courier.dropping) {
         moverColliders.push(makeAxes(courier.heading, FILES.rappi.length * 0.92, FILES.rappi.width, courier.x, courier.z))
@@ -541,8 +558,14 @@ export function Traffic() {
       if (courier.dropping) group.rotation.y += now * 0.004
       const shout = shoutRefs.current[index]
       if (shout) {
-        shout.visible = performance.now() < courier.shoutUntil
-        shout.position.set(0, 2.35, 0)
+        const live = now < courier.shoutUntil
+        shout.visible = live
+        if (live) {
+          const t = 1 - (courier.shoutUntil - now) / 2400
+          const pop = t < 0.18 ? 0.45 + t * 4.2 : t > 0.82 ? 1 - (t - 0.82) * 2.4 : 1 + Math.sin(now * 0.02) * 0.04
+          shout.scale.set(3.15 * pop, 1.22 * pop, 1)
+          shout.position.set(0, 2.05 + Math.sin(now * 0.012) * 0.05, 0)
+        }
       }
       const ring = dropRefs.current[index]
       if (ring) {
@@ -566,11 +589,11 @@ export function Traffic() {
           <VehicleModel url={FILES.rappi.url} length={FILES.rappi.length} yaw={FILES.rappi.yaw} />
           <sprite
             ref={(node) => { shoutRefs.current[index] = node }}
-            scale={[4.8, 2, 1]}
-            position={[0, 2.35, 0]}
+            scale={[3.15, 1.22, 1]}
+            position={[0, 2.05, 0]}
             visible={false}
           >
-            <spriteMaterial map={shoutTex} transparent depthTest={false} />
+            <spriteMaterial map={shoutTex} transparent depthTest={false} depthWrite={false} toneMapped={false} />
           </sprite>
           <mesh
             ref={(node) => { dropRefs.current[index] = node }}
